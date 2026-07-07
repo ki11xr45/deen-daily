@@ -83,9 +83,17 @@
   .abtn{background:var(--panel-2);border:1px solid var(--line-2);color:var(--gold);border-radius:8px;font-size:12px;font-weight:600;padding:5px 10px;cursor:pointer}
   .abtn:hover{border-color:var(--gold)}
   .abtn.bookmarked{background:var(--gold);color:var(--bg)}
-  .arabic{font-family:'Amiri',serif;font-size:25px;line-height:1.95;text-align:right;direction:rtl;margin-bottom:8px}
-  .translit{font-size:13px;color:var(--dim);font-style:italic;line-height:1.6;margin-bottom:8px}
-  .english{font-size:14.5px;color:var(--muted);line-height:1.6}
+  .arabic{font-family:'Amiri',serif;font-size:25px;line-height:2.1;text-align:right;direction:rtl;margin-bottom:12px}
+  .translit{font-size:13px;color:var(--dim);font-style:italic;line-height:1.7;margin-bottom:10px}
+  .english{font-size:14.5px;color:var(--muted);line-height:1.65}
+  .qmode{display:flex;gap:0;margin-bottom:14px;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;width:fit-content}
+  .qm{background:var(--panel-2);border:none;color:var(--dim);font-weight:700;font-size:13px;padding:9px 22px;cursor:pointer}
+  .qm.active{background:var(--gold);color:var(--bg)}
+  .juz-surah-head{
+    text-align:center;font-family:'Amiri',serif;font-size:24px;color:var(--gold);
+    margin:26px 0 12px;padding-top:14px;border-top:1px dashed var(--line-2);
+  }
+  .juz-surah-head small{display:block;font-family:'Inter',sans-serif;font-size:11px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
   .playall{display:block;margin:0 auto 18px}
   .resume{background:var(--panel-2);border:1px solid var(--gold);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--gold);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
   .resume button{background:none;border:none;color:var(--gold);font-weight:700;cursor:pointer;font-size:13px;text-decoration:underline}
@@ -245,13 +253,18 @@
 
   <!-- ============ QURAN ============ -->
   <div id="page-quran" class="page" style="display:none">
+    <div class="qmode">
+      <button class="qm active" id="qm-surah" onclick="setQuranMode('surah')">Surah</button>
+      <button class="qm" id="qm-juz" onclick="setQuranMode('juz')">Juz</button>
+    </div>
     <div class="qsearchrow">
-      <input type="text" id="q-search" placeholder="Search surah by name or number…" oninput="filterSurahs()">
+      <input type="text" id="q-search" placeholder="Search: surah name, number, or 'kursi', 'yaseen'…" oninput="filterSurahs()">
       <input type="number" id="q-ayah-jump" placeholder="Ayah #" min="1" style="max-width:90px">
       <button class="btn ghost" onclick="jumpToAyah()">Go</button>
     </div>
     <div class="qcontrols">
-      <div><label class="ctl">Surah</label><select id="sel-surah"></select></div>
+      <div id="wrap-surah"><label class="ctl">Surah</label><select id="sel-surah"></select></div>
+      <div id="wrap-juz" style="display:none"><label class="ctl">Juz</label><select id="sel-juz"></select></div>
       <div><label class="ctl">Reciter</label><select id="sel-reciter"></select></div>
       <div style="grid-column:1/-1"><label class="ctl">Translation</label><select id="sel-translation"></select></div>
     </div>

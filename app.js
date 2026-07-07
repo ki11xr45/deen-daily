@@ -263,7 +263,20 @@ async function loadHolidays() {
 
 /* ================= QURAN ================= */
 const QAPI = 'https://api.alquran.cloud/v1';
+const FAMOUS_RECITERS = ['ar.abdurrahmaansudais', 'ar.alafasy', 'ar.abdulbasitmurattal', 'ar.mahermuaiqly', 'ar.minshawi', 'ar.husary'];
+/* Famous-verse shortcuts: name → surah (+ optional ayah to scroll to) */
+const SHORTCUTS = {
+  'kursi': { surah: 2, ayah: 255 }, 'ayat al-kursi': { surah: 2, ayah: 255 }, 'ayatul kursi': { surah: 2, ayah: 255 },
+  'yaseen': { surah: 36 }, 'yasin': { surah: 36 }, 'ya-sin': { surah: 36 },
+  'mulk': { surah: 67 }, 'kahf': { surah: 18 }, 'rahman': { surah: 55 }, 'ar-rahman': { surah: 55 },
+  'waqiah': { surah: 56 }, 'waqia': { surah: 56 }, 'fatiha': { surah: 1 }, 'ikhlas': { surah: 112 },
+  'falaq': { surah: 113 }, 'nas': { surah: 114 }, 'baqarah': { surah: 2 }, 'juz amma': { surah: 78 },
+  'amanar rasul': { surah: 2, ayah: 285 }, 'last two of baqarah': { surah: 2, ayah: 285 },
+};
 let surahList = [];
+let quranMode = 'surah';
+let currentJuz = store.get('dd-juz', 30);
+let scrollToAyahAfterLoad = null;
 let currentSurah = store.get('dd-surah', 1);
 let translation = store.get('dd-translation', 'en.pickthall');
 let reciter = store.get('dd-reciter', 'ar.alafasy');
@@ -285,10 +298,20 @@ async function initQuran() {
     $('sel-translation').onchange = () => { translation = $('sel-translation').value; store.set('dd-translation', translation); loadSurah(); };
 
     const r = await (await fetch(QAPI + '/edition?format=audio&language=ar')).json();
-    $('sel-reciter').innerHTML = r.data.map(x => `<option value="${x.identifier}">🎙 ${x.englishName}</option>`).join('');
+    const famous = r.data.filter(x => FAMOUS_RECITERS.includes(x.identifier))
+      .sort((a, b) => FAMOUS_RECITERS.indexOf(a.identifier) - FAMOUS_RECITERS.indexOf(b.identifier));
+    const rest = r.data.filter(x => !FAMOUS_RECITERS.includes(x.identifier));
+    $('sel-reciter').innerHTML =
+      '<optgroup label="⭐ Most popular">' + famous.map(x => `<option value="${x.identifier}">🎙 ${x.englishName}</option>`).join('') + '</optgroup>' +
+      '<optgroup label="All reciters">' + rest.map(x => `<option value="${x.identifier}">🎙 ${x.englishName}</option>`).join('') + '</optgroup>';
     if ([...$('sel-reciter').options].some(o => o.value === reciter)) $('sel-reciter').value = reciter;
     else reciter = $('sel-reciter').value;
-    $('sel-reciter').onchange = () => { reciter = $('sel-reciter').value; store.set('dd-reciter', reciter); stopAudio(); };
+    $('sel-reciter').onchange = () => { reciter = $('sel-reciter').value; store.set('dd-reciter', reciter); delete bitrateCache[reciter]; stopAudio(); };
+
+    // Juz selector
+    $('sel-juz').innerHTML = Array.from({ length: 30 }, (_, i) => `<option value="${i + 1}">Juz ${i + 1}</option>`).join('');
+    $('sel-juz').value = currentJuz;
+    $('sel-juz').onchange = () => { currentJuz = +$('sel-juz').value; store.set('dd-juz', currentJuz); loadJuz(); };
 
     $('tg-translit').checked = prefs.translit;
     $('tg-english').checked = prefs.english;
@@ -302,8 +325,31 @@ function renderSurahOptions(list) {
   $('sel-surah').innerHTML = list.map(x =>
     `<option value="${x.number}">${x.number}. ${x.englishName} — ${x.englishNameTranslation}</option>`).join('');
 }
+function setQuranMode(m) {
+  quranMode = m;
+  $('qm-surah').classList.toggle('active', m === 'surah');
+  $('qm-juz').classList.toggle('active', m === 'juz');
+  $('wrap-surah').style.display = m === 'surah' ? '' : 'none';
+  $('wrap-juz').style.display = m === 'juz' ? '' : 'none';
+  stopAudio();
+  if (m === 'surah') loadSurah(); else loadJuz();
+}
+
 function filterSurahs() {
   const q = $('q-search').value.trim().toLowerCase();
+  // Famous-verse shortcuts: "kursi" → Al-Baqarah 2:255, "yaseen" → Surah 36, etc.
+  for (const key of Object.keys(SHORTCUTS)) {
+    if (q.length >= 3 && (key === q || key.includes(q) || q.includes(key))) {
+      const t = SHORTCUTS[key];
+      setQuranMode('surah');
+      currentSurah = t.surah;
+      $('sel-surah').value = t.surah;
+      store.set('dd-surah', t.surah);
+      scrollToAyahAfterLoad = t.ayah || null;
+      loadSurah();
+      return;
+    }
+  }
   const filtered = q ? surahList.filter(s =>
     String(s.number) === q ||
     s.englishName.toLowerCase().includes(q) ||
@@ -388,12 +434,46 @@ async function loadSurah() {
     }).join('');
     c.innerHTML = html;
     renderResume();
+    if (scrollToAyahAfterLoad) {
+      const target = ar.ayahs.find(x => x.numberInSurah === scrollToAyahAfterLoad);
+      scrollToAyahAfterLoad = null;
+      if (target) setTimeout(() => {
+        const el = $('ayah-' + target.number);
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.borderColor = 'var(--gold)'; }
+      }, 150);
+    }
   } catch {
     c.innerHTML = '<div class="err">Couldn\'t load this surah. Please try again.</div>';
   }
 }
 
-function audioUrl(g) { return `https://cdn.islamic.network/quran/audio/128/${reciter}/${g}.mp3`; }
+/* Audio with automatic quality fallback — some reciters only exist at certain bitrates on the CDN */
+const BITRATES = ['128', '64', '192', '32'];
+let bitrateCache = store.get('dd-bitrates', {}); // reciter → known working bitrate
+function audioUrl(g, br) { return `https://cdn.islamic.network/quran/audio/${br}/${reciter}/${g}.mp3`; }
+
+function buildAudio(g, onended, onallfail) {
+  // start from the known-good bitrate for this reciter, then cascade
+  const known = bitrateCache[reciter];
+  const order = known ? [known, ...BITRATES.filter(b => b !== known)] : BITRATES.slice();
+  let idx = 0;
+  const a = new Audio();
+  a.playbackRate = playbackRate;
+  const tryNext = () => {
+    if (idx >= order.length) { if (onallfail) onallfail(); return; }
+    a.src = audioUrl(g, order[idx]);
+    a.load();
+    a.play().then(() => {
+      bitrateCache[reciter] = order[idx];
+      store.set('dd-bitrates', bitrateCache);
+    }).catch(() => { idx++; tryNext(); });
+  };
+  a.onerror = () => { idx++; tryNext(); };
+  a.onended = onended;
+  a.startPlay = tryNext;
+  return a;
+}
+
 let playbackRate = store.get('dd-speed', 1);
 function speedChanged() {
   playbackRate = parseFloat($('sel-speed').value);
@@ -401,11 +481,12 @@ function speedChanged() {
   if (currentAudio) currentAudio.playbackRate = playbackRate;
 }
 function stopAudio() {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if (currentAudio) { currentAudio.pause(); currentAudio.onended = null; currentAudio.onerror = null; currentAudio = null; }
   playAllQueue = [];
   document.querySelectorAll('.ayah.playing').forEach(el => el.classList.remove('playing'));
 }
 function markLastRead(inSurah) {
+  if (!surahData) return;
   store.set('dd-lastread', { surah: surahData.number, surahName: surahData.englishName, ayah: inSurah });
 }
 function playAyah(g, surahNum, inSurah) {
@@ -413,48 +494,106 @@ function playAyah(g, surahNum, inSurah) {
   const el = $('ayah-' + g);
   if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   markLastRead(inSurah);
-  const a = new Audio(audioUrl(g));
-  a.playbackRate = playbackRate;
+  const a = buildAudio(g,
+    () => { if (el) el.classList.remove('playing'); },
+    () => { if (el) el.classList.remove('playing'); });
   currentAudio = a;
-  a.onended = () => { if (el) el.classList.remove('playing'); };
-  a.onerror = () => { if (el) el.classList.remove('playing'); };
-  a.play().catch(() => {});
+  a.startPlay();
 }
-function playAll() {
-  if (!surahData) return;
+function playSequence(items) {
   stopAudio();
-  const items = surahData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah }));
   playAllQueue = items;
-
-  // Preload pool: audio for each ayah is created ahead of time so transitions are gapless
-  const preloaded = {};
+  // Preload next files at the known-good bitrate so transitions are gapless
+  const preloadEl = {};
   const preload = (i) => {
-    if (i >= items.length || preloaded[i]) return;
-    const a = new Audio(audioUrl(items[i].g));
+    if (i >= items.length || preloadEl[i]) return;
+    const br = bitrateCache[reciter] || '128';
+    const a = new Audio(audioUrl(items[i].g, br));
     a.preload = 'auto';
-    a.playbackRate = playbackRate;
-    preloaded[i] = a;
+    preloadEl[i] = a;
   };
-  preload(0); preload(1); preload(2); // warm up the first few immediately
-
+  preload(0); preload(1); preload(2);
   const playIndex = (i) => {
-    if (i >= items.length || playAllQueue !== items) return; // stopped or finished
+    if (i >= items.length || playAllQueue !== items) return;
     const item = items[i];
     const el = $('ayah-' + item.g);
     document.querySelectorAll('.ayah.playing').forEach(x => x.classList.remove('playing'));
     if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-    markLastRead(item.inSurah);
-    const a = preloaded[i] || new Audio(audioUrl(item.g));
-    a.playbackRate = playbackRate;
-    currentAudio = a;
-    // preload the next two while this one plays
+    if (item.inSurah) markLastRead(item.inSurah);
     preload(i + 1); preload(i + 2);
-    delete preloaded[i];
-    a.onended = () => { if (el) el.classList.remove('playing'); playIndex(i + 1); };
-    a.onerror = () => { if (el) el.classList.remove('playing'); playIndex(i + 1); };
-    a.play().catch(() => playIndex(i + 1));
+    // Use preloaded element if it loaded fine; otherwise fall back to the cascading builder
+    const pre = preloadEl[i];
+    delete preloadEl[i];
+    if (pre && pre.readyState >= 2) {
+      pre.playbackRate = playbackRate;
+      currentAudio = pre;
+      pre.onended = () => { if (el) el.classList.remove('playing'); playIndex(i + 1); };
+      pre.onerror = () => { if (el) el.classList.remove('playing'); playIndex(i + 1); };
+      pre.play().catch(() => playIndex(i + 1));
+    } else {
+      const a = buildAudio(item.g,
+        () => { if (el) el.classList.remove('playing'); playIndex(i + 1); },
+        () => { if (el) el.classList.remove('playing'); playIndex(i + 1); });
+      currentAudio = a;
+      a.startPlay();
+    }
   };
   playIndex(0);
+}
+function playAll() {
+  if (quranMode === 'juz' && juzData) {
+    playSequence(juzData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah })));
+  } else if (surahData) {
+    playSequence(surahData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah })));
+  }
+}
+
+/* ---- JUZ MODE ---- */
+let juzData = null;
+async function loadJuz() {
+  stopAudio();
+  const c = $('surah-container');
+  c.innerHTML = '<div class="loading">Loading Juz ' + currentJuz + '…</div>';
+  try {
+    const fetches = [
+      fetch(`${QAPI}/juz/${currentJuz}/quran-uthmani`).then(r => r.json()),
+      fetch(`${QAPI}/juz/${currentJuz}/${translation}`).then(r => r.json()),
+    ];
+    if (prefs.translit) fetches.push(fetch(`${QAPI}/juz/${currentJuz}/en.transliteration`).then(r => r.json()));
+    const results = await Promise.all(fetches);
+    const ar = results[0].data, en = results[1].data, tr = prefs.translit ? results[2].data : null;
+    juzData = ar;
+    const bms = store.get('dd-bookmarks', []);
+    let html = `<div class="surah-head">
+        <div class="surah-arabic">الجزء ${currentJuz}</div>
+        <div class="surah-meta">Juz ${currentJuz} · ${ar.ayahs.length} ayahs</div>
+      </div>
+      <button class="btn playall" onclick="playAll()">▶ Play full juz</button>`;
+    let lastSurah = null;
+    html += ar.ayahs.map((a, i) => {
+      let sep = '';
+      if (a.surah.number !== lastSurah) {
+        lastSurah = a.surah.number;
+        sep = `<div class="juz-surah-head">${a.surah.name}<small>Surah ${a.surah.number} · ${a.surah.englishName}</small></div>`;
+      }
+      const isBm = bms.some(b => b.surah === a.surah.number && b.ayah === a.numberInSurah);
+      return sep + `<div class="ayah" id="ayah-${a.number}">
+        <div class="ayah-top">
+          <span class="ayah-num">${a.surah.number}:${a.numberInSurah}</span>
+          <span class="ayah-actions">
+            <button class="abtn ${isBm ? 'bookmarked' : ''}" onclick="toggleBookmark(${a.surah.number},${a.numberInSurah},'${a.surah.englishName}')">★</button>
+            <button class="abtn" onclick="playAyah(${a.number},${a.surah.number},${a.numberInSurah})">▶ Play</button>
+          </span>
+        </div>
+        <div class="arabic">${a.text}</div>
+        ${tr ? `<div class="translit">${tr.ayahs[i].text}</div>` : ''}
+        ${prefs.english ? `<div class="english">${en.ayahs[i].text}</div>` : ''}
+      </div>`;
+    }).join('');
+    c.innerHTML = html;
+  } catch {
+    c.innerHTML = '<div class="err">Couldn\'t load this juz. Please try again.</div>';
+  }
 }
 
 /* ================= DUAS ================= */
@@ -494,7 +633,10 @@ function renderDuas() {
     const on = favs.includes(i);
     return `<div class="card dua">
       <div class="d-title"><span>${d.title}</span>
-        <button class="fav ${on ? 'on' : ''}" onclick="toggleFavDua(${i})" aria-label="Favorite">★</button></div>
+        <span style="display:flex;gap:4px;align-items:center">
+          <button class="abtn" onclick="readDua(${i})" aria-label="Listen" title="Device voice — not a recorded reciter">🔊</button>
+          <button class="fav ${on ? 'on' : ''}" onclick="toggleFavDua(${i})" aria-label="Favorite">★</button>
+        </span></div>
       <div class="arabic">${d.ar}</div>
       <div class="translit">${d.translit}</div>
       <div class="english">${d.en}</div>
@@ -502,6 +644,24 @@ function renderDuas() {
       ${d.rep ? `<span class="d-rep">${d.rep}</span>` : ''}
     </div>`;
   }).join('') : '<div class="loading">No favorites yet — tap the ★ on any du\'a.</div>';
+}
+
+/* Du'a reader — uses the device's built-in Arabic voice (synthetic, not a recorded qari) */
+let speaking = false;
+function readDua(i) {
+  if (!('speechSynthesis' in window)) { alert('Voice playback is not supported on this device.'); return; }
+  if (speaking) { speechSynthesis.cancel(); speaking = false; return; }
+  const d = DUAS[i];
+  speechSynthesis.cancel();
+  const voices = speechSynthesis.getVoices();
+  const arVoice = voices.find(v => v.lang && v.lang.startsWith('ar'));
+  const u = new SpeechSynthesisUtterance(arVoice ? d.ar : d.en);
+  if (arVoice) u.voice = arVoice;
+  u.lang = arVoice ? arVoice.lang : 'en-US';
+  u.rate = 0.85;
+  u.onend = () => { speaking = false; };
+  speaking = true;
+  speechSynthesis.speak(u);
 }
 function toggleFavDua(i) {
   let favs = store.get('dd-favduas', []);
