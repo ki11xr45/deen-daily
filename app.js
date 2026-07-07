@@ -297,15 +297,19 @@ async function initQuran() {
     else translation = $('sel-translation').value;
     $('sel-translation').onchange = () => { translation = $('sel-translation').value; store.set('dd-translation', translation); loadSurah(); };
 
-    const r = await (await fetch(QAPI + '/edition?format=audio&language=ar')).json();
-    const famous = r.data.filter(x => FAMOUS_RECITERS.includes(x.identifier))
-      .sort((a, b) => FAMOUS_RECITERS.indexOf(a.identifier) - FAMOUS_RECITERS.indexOf(b.identifier));
-    const rest = r.data.filter(x => !FAMOUS_RECITERS.includes(x.identifier));
-    $('sel-reciter').innerHTML =
-      '<optgroup label="⭐ Most popular">' + famous.map(x => `<option value="${x.identifier}">🎙 ${x.englishName}</option>`).join('') + '</optgroup>' +
-      '<optgroup label="All reciters">' + rest.map(x => `<option value="${x.identifier}">🎙 ${x.englishName}</option>`).join('') + '</optgroup>';
-    if ([...$('sel-reciter').options].some(o => o.value === reciter)) $('sel-reciter').value = reciter;
-    else reciter = $('sel-reciter').value;
+    // Curated top reciters only — chosen for fame + reliable audio on the CDN
+    const RECITERS7 = [
+      { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy' },
+      { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit (Murattal)' },
+      { id: 'ar.abdurrahmaansudais', name: 'Abdur-Rahman As-Sudais' },
+      { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly' },
+      { id: 'ar.minshawi', name: 'Mohamed Siddiq El-Minshawi' },
+      { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary' },
+      { id: 'ar.saoodshuraym', name: "Sa'ud Ash-Shuraym" },
+    ];
+    $('sel-reciter').innerHTML = RECITERS7.map(x => `<option value="${x.id}">🎙 ${x.name}</option>`).join('');
+    if (RECITERS7.some(x => x.id === reciter)) $('sel-reciter').value = reciter;
+    else { reciter = RECITERS7[0].id; store.set('dd-reciter', reciter); }
     $('sel-reciter').onchange = () => { reciter = $('sel-reciter').value; store.set('dd-reciter', reciter); delete bitrateCache[reciter]; stopAudio(); };
 
     // Juz selector
