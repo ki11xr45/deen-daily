@@ -17,6 +17,26 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // ---- Rate limiting (per visitor IP): 20 questions/day, max 6/minute ----
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
+  const today = new Date().toISOString().slice(0, 10);
+  const now = Date.now();
+  if (!globalThis.__scholarHits) globalThis.__scholarHits = new Map();
+  const hits = globalThis.__scholarHits;
+  const rec = hits.get(ip) || { day: today, count: 0, recent: [] };
+  if (rec.day !== today) { rec.day = today; rec.count = 0; }
+  rec.recent = rec.recent.filter(t => now - t < 60000);
+  if (rec.count >= 20) {
+    return res.status(429).json({ error: 'daily_limit', message: 'Daily Scholar limit reached. Come back tomorrow, insha\'Allah.' });
+  }
+  if (rec.recent.length >= 6) {
+    return res.status(429).json({ error: 'slow_down', message: 'Please slow down a little — try again in a minute.' });
+  }
+  rec.count++;
+  rec.recent.push(now);
+  hits.set(ip, rec);
+  if (hits.size > 5000) hits.clear(); // memory guard
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'Server is missing ANTHROPIC_API_KEY' });
