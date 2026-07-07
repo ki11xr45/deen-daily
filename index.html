@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deen Daily</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0D1226; --panel:#151C38; --panel-2:#1A2140; --line:#232B4E; --line-2:#2C355E;
+    --text:#E7E9F4; --muted:#9BA3C7; --dim:#6C76A0; --gold:#B9A05C; --green:#5CB98A; --red:#E58888;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);height:100dvh;display:flex;flex-direction:column}
+  button,select,input{font-family:'Inter',sans-serif}
+  header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#121936,var(--bg));flex-shrink:0}
+  .head-inner{max-width:760px;margin:0 auto;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .brand{font-weight:700;font-size:16px;white-space:nowrap}
+  .brand span{color:var(--gold)}
+  .tabs{display:flex;gap:2px;overflow-x:auto}
+  .tab{background:none;border:1px solid transparent;color:var(--dim);font-size:13px;font-weight:600;padding:7px 10px;border-radius:10px;cursor:pointer;white-space:nowrap}
+  .tab.active{background:var(--panel-2);color:var(--text);border-color:var(--gold)}
+  main{flex:1;overflow-y:auto}
+  .page{max-width:760px;margin:0 auto;padding:18px 14px 40px}
+  h2.sec{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.12em;margin:22px 0 10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px}
+  select,input[type=text],input[type=number]{
+    width:100%;background:var(--panel-2);border:1px solid var(--line-2);color:var(--text);
+    border-radius:10px;padding:10px 12px;font-size:14px;
+  }
+  label.ctl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;display:block;margin-bottom:5px}
+  .btn{background:var(--gold);color:var(--bg);border:none;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer}
+  .btn.ghost{background:var(--panel-2);color:var(--gold);border:1px solid var(--line-2)}
+  .btn.ghost:hover{border-color:var(--gold)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .loading,.err{text-align:center;color:var(--dim);padding:30px 0;font-size:14px}
+  .err{color:var(--red)}
+  .note{background:var(--panel-2);border:1px solid var(--gold);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--gold);margin-bottom:14px}
+
+  /* Prayer */
+  .hijri{ text-align:center;margin-bottom:16px }
+  .hijri .h-ar{font-family:'Amiri',serif;font-size:22px;color:var(--gold)}
+  .hijri .h-en{font-size:13px;color:var(--muted);margin-top:2px}
+  .next-prayer{ text-align:center;padding:22px 18px }
+  .next-prayer .np-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.14em}
+  .next-prayer .np-name{font-size:28px;font-weight:700;color:var(--gold);margin:4px 0 2px}
+  .next-prayer .np-count{font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  .next-prayer .np-time{font-size:13px;color:var(--muted);margin-top:4px}
+  .ptime{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid var(--line)}
+  .ptime:last-child{border-bottom:none}
+  .ptime .pt-name{font-weight:600;font-size:15px}
+  .ptime .pt-time{color:var(--muted);font-variant-numeric:tabular-nums;font-size:15px}
+  .ptime.now .pt-name,.ptime.now .pt-time{color:var(--gold)}
+  .ptime input[type=checkbox]{width:20px;height:20px;accent-color:var(--gold);margin-left:12px;cursor:pointer}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
+  .stat b{display:block;font-size:24px;font-weight:700}
+  .stat span{font-size:11.5px;color:var(--dim)}
+  .stat b.gold{color:var(--gold)} .stat b.green{color:var(--green)} .stat b.red{color:var(--red)}
+  .holiday{display:flex;justify-content:space-between;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);font-size:14px}
+  .holiday:last-child{border-bottom:none}
+  .holiday .h-when{color:var(--muted);white-space:nowrap;font-size:13px}
+  .locrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+  .locrow>div{flex:1;min-width:130px}
+
+  /* Quran */
+  .qcontrols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  @media(max-width:640px){.qcontrols{grid-template-columns:1fr}}
+  .qsearchrow{display:flex;gap:8px;margin-bottom:14px}
+  .qtoggles{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;font-size:13.5px;color:var(--muted)}
+  .qtoggles label{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .qtoggles input{accent-color:var(--gold);width:16px;height:16px}
+  .surah-head{text-align:center;margin:6px 0 18px}
+  .surah-arabic{font-family:'Amiri',serif;font-size:36px;color:var(--gold)}
+  .surah-meta{font-size:12px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-top:4px}
+  .bismillah{font-family:'Amiri',serif;font-size:23px;color:var(--muted);text-align:center;margin-bottom:18px}
+  .ayah{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px;margin-bottom:12px}
+  .ayah.playing{border-color:var(--gold)}
+  .ayah-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px}
+  .ayah-num{font-size:12px;font-weight:700;color:var(--gold);background:var(--panel-2);border:1px solid var(--line-2);border-radius:6px;padding:3px 8px}
+  .ayah-actions{display:flex;gap:6px}
+  .abtn{background:var(--panel-2);border:1px solid var(--line-2);color:var(--gold);border-radius:8px;font-size:12px;font-weight:600;padding:5px 10px;cursor:pointer}
+  .abtn:hover{border-color:var(--gold)}
+  .abtn.bookmarked{background:var(--gold);color:var(--bg)}
+  .arabic{font-family:'Amiri',serif;font-size:25px;line-height:1.95;text-align:right;direction:rtl;margin-bottom:8px}
+  .translit{font-size:13px;color:var(--dim);font-style:italic;line-height:1.6;margin-bottom:8px}
+  .english{font-size:14.5px;color:var(--muted);line-height:1.6}
+  .playall{display:block;margin:0 auto 18px}
+  .resume{background:var(--panel-2);border:1px solid var(--gold);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--gold);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .resume button{background:none;border:none;color:var(--gold);font-weight:700;cursor:pointer;font-size:13px;text-decoration:underline}
+  .bm-item{display:flex;justify-content:space-between;align-items:center;padding:10px 4px;border-bottom:1px solid var(--line);font-size:14px}
+  .bm-item:last-child{border-bottom:none}
+  .bm-item button{background:none;border:none;color:var(--gold);cursor:pointer;font-weight:600;font-size:13px}
+
+  /* Duas */
+  .dua-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .cat{background:var(--panel-2);border:1px solid var(--line-2);color:var(--muted);border-radius:999px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .cat.active{border-color:var(--gold);color:var(--gold)}
+  .dua .d-title{font-weight:700;font-size:15px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .dua .d-src{font-size:12px;color:var(--dim);margin-top:8px}
+  .dua .d-rep{display:inline-block;font-size:11.5px;color:var(--gold);background:var(--panel-2);border:1px solid var(--line-2);border-radius:6px;padding:2px 8px;margin-top:8px}
+  .fav{background:none;border:none;font-size:18px;cursor:pointer;color:var(--dim)}
+  .fav.on{color:var(--gold)}
+  /* Tasbih */
+  .tasbih{text-align:center;padding:26px 18px}
+  .tap{
+    width:180px;height:180px;border-radius:50%;margin:14px auto;cursor:pointer;user-select:none;
+    background:radial-gradient(circle at 35% 30%, #232B4E, var(--panel-2));border:2px solid var(--gold);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+  }
+  .tap b{font-size:44px;font-variant-numeric:tabular-nums}
+  .tap span{font-size:12px;color:var(--dim)}
+  .tasbih-row{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+
+  /* Qibla */
+  .qibla{text-align:center;padding:26px 18px}
+  .compass{width:220px;height:220px;border-radius:50%;border:2px solid var(--line-2);margin:18px auto;position:relative;background:radial-gradient(circle at 50% 35%, #1A2140, #10152C)}
+  .needle{position:absolute;left:50%;top:50%;width:4px;height:92px;background:var(--gold);border-radius:4px;transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(0deg);transition:transform .2s ease}
+  .needle::after{content:"🕋";position:absolute;top:-26px;left:50%;transform:translateX(-50%);font-size:20px}
+  .compass .n{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--dim);font-weight:700}
+  .qdeg{font-size:26px;font-weight:700;color:var(--gold)}
+
+  /* Scholar */
+  .scholar-wrap{display:flex;flex-direction:column;height:100%}
+  .chat{flex:1;overflow-y:auto;padding:16px 0}
+  .welcome{max-width:520px;margin:30px auto 0;text-align:center;padding:0 8px}
+  .welcome h2{font-size:24px;margin:8px 0 10px}
+  .welcome p{color:var(--muted);font-size:14.5px;line-height:1.6;margin-bottom:20px}
+  .starters{display:grid;gap:10px;text-align:left}
+  .starter{background:var(--panel-2);border:1px solid var(--line-2);border-radius:12px;color:var(--text);padding:12px 16px;font-size:14px;font-weight:500;cursor:pointer;text-align:left}
+  .starter:hover{border-color:var(--gold)}
+  .row{display:flex;gap:10px;margin-bottom:14px}
+  .row.user{justify-content:flex-end}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+  .bubble{padding:13px 16px;border-radius:14px;max-width:85%;font-size:15px;line-height:1.65;white-space:pre-wrap}
+  .bubble.ai{background:var(--panel);border:1px solid var(--line);border-radius:14px 14px 14px 4px}
+  .bubble.user{background:var(--line-2);border-radius:14px 14px 4px 14px;max-width:80%}
+  .composer-wrap{border-top:1px solid var(--line);background:#0F152C;padding:12px 14px 14px;flex-shrink:0}
+  .composer{max-width:760px;margin:0 auto;display:flex;gap:10px}
+  .composer input{flex:1;background:var(--panel-2);border:1px solid var(--line-2);border-radius:12px;color:var(--text);padding:12px 16px;font-size:15px;outline:none}
+  .disclaimer{max-width:760px;margin:10px auto 0;text-align:center;font-size:11.5px;color:var(--dim)}
+  .pulse{animation:pulse 1.4s ease-in-out infinite;color:var(--gold)}
+  @keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
+  @media(prefers-reduced-motion:reduce){.pulse{animation:none}.needle{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-inner">
+    <div class="brand"><span>☾</span> Deen Daily</div>
+    <nav class="tabs">
+      <button class="tab active" id="tab-prayer" onclick="showTab('prayer')">🕌 Prayer</button>
+      <button class="tab" id="tab-quran" onclick="showTab('quran')">📖 Qur'an</button>
+      <button class="tab" id="tab-duas" onclick="showTab('duas')">🤲 Duas</button>
+      <button class="tab" id="tab-qibla" onclick="showTab('qibla')">🧭 Qibla</button>
+      <button class="tab" id="tab-scholar" onclick="showTab('scholar')">🎓 Scholar</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ============ PRAYER ============ -->
+  <div id="page-prayer" class="page">
+    <div class="hijri" id="hijri-box"></div>
+
+    <div class="card">
+      <div class="locrow">
+        <div style="flex:0 0 auto"><button class="btn ghost" onclick="useMyLocation()">📍 Use my location</button></div>
+        <div><label class="ctl">City</label><input type="text" id="loc-city" placeholder="e.g. Fullerton"></div>
+        <div><label class="ctl">Country</label><input type="text" id="loc-country" placeholder="e.g. US"></div>
+        <div style="flex:0 0 auto"><button class="btn" onclick="useCity()">Go</button></div>
+      </div>
+      <div style="margin-top:12px">
+        <label class="ctl">Calculation method</label>
+        <select id="sel-method" onchange="methodChanged()">
+          <option value="2">ISNA — North America</option>
+          <option value="3">Muslim World League</option>
+          <option value="4">Umm Al-Qura, Makkah</option>
+          <option value="5">Egyptian General Authority</option>
+          <option value="1">University of Karachi</option>
+          <option value="12">UOIF — France</option>
+          <option value="13">Diyanet — Turkey</option>
+          <option value="7">Tehran</option>
+          <option value="0">Shia Ithna-Ashari (Jafari)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="prayer-content"><div class="loading">Set your location to see prayer times.</div></div>
+
+    <h2 class="sec">Worship tracking</h2>
+    <div class="stats" id="stats-box"></div>
+
+    <h2 class="sec">Islamic calendar — upcoming dates</h2>
+    <div class="card" id="holidays-box"><div class="loading">Loading…</div></div>
+    <p style="font-size:11.5px;color:var(--dim);text-align:center;margin-top:8px">
+      Dates are calculated estimates — actual observance follows local moonsighting.
+    </p>
+  </div>
+
+  <!-- ============ QURAN ============ -->
+  <div id="page-quran" class="page" style="display:none">
+    <div class="qsearchrow">
+      <input type="text" id="q-search" placeholder="Search surah by name or number…" oninput="filterSurahs()">
+      <input type="number" id="q-ayah-jump" placeholder="Ayah #" min="1" style="max-width:90px">
+      <button class="btn ghost" onclick="jumpToAyah()">Go</button>
+    </div>
+    <div class="qcontrols">
+      <div><label class="ctl">Surah</label><select id="sel-surah"></select></div>
+      <div><label class="ctl">Reciter</label><select id="sel-reciter"></select></div>
+      <div style="grid-column:1/-1"><label class="ctl">Translation</label><select id="sel-translation"></select></div>
+    </div>
+    <div class="qtoggles">
+      <label><input type="checkbox" id="tg-translit" onchange="togglePref('translit')"> Transliteration</label>
+      <label><input type="checkbox" id="tg-english" checked onchange="togglePref('english')"> Translation</label>
+    </div>
+    <div id="resume-box"></div>
+    <div id="bookmarks-box"></div>
+    <div id="surah-container"><div class="loading">Loading the Qur'an…</div></div>
+  </div>
+
+  <!-- ============ DUAS ============ -->
+  <div id="page-duas" class="page" style="display:none">
+    <div class="card tasbih">
+      <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.14em">Digital Tasbih</div>
+      <div class="tap" id="tasbih-tap" onclick="tasbihTap()">
+        <b id="tasbih-count">0</b>
+        <span id="tasbih-target-label">of 33</span>
+      </div>
+      <div class="tasbih-row">
+        <button class="btn ghost" onclick="setTasbihTarget(33)">33</button>
+        <button class="btn ghost" onclick="setTasbihTarget(99)">99</button>
+        <button class="btn ghost" onclick="setTasbihTarget(100)">100</button>
+        <button class="btn ghost" onclick="tasbihReset()">Reset</button>
+      </div>
+    </div>
+    <div class="dua-cats" id="dua-cats"></div>
+    <div id="dua-list"></div>
+    <p style="font-size:11.5px;color:var(--dim);text-align:center;margin-top:10px">
+      Starter collection of authentic adhkar from the Qur'an, Sahih al-Bukhari, Sahih Muslim, and the Sunan collections.
+    </p>
+  </div>
+
+  <!-- ============ QIBLA ============ -->
+  <div id="page-qibla" class="page" style="display:none">
+    <div class="card qibla">
+      <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.14em">Direction to the Kaaba</div>
+      <div class="compass"><span class="n">N</span><div class="needle" id="needle"></div></div>
+      <div class="qdeg" id="qibla-deg">—</div>
+      <p style="font-size:13px;color:var(--muted);margin:10px 0 16px" id="qibla-info">Tap below to find your Qibla direction.</p>
+      <button class="btn" onclick="initQibla()">📍 Find my Qibla</button>
+      <button class="btn ghost" id="compass-btn" style="display:none" onclick="enableCompass()">🧭 Enable live compass</button>
+      <p style="font-size:11.5px;color:var(--dim);margin-top:14px">
+        Live compass works on phones. Hold your phone flat and away from metal objects to calibrate. If the needle seems off, wave your phone in a figure-8 motion.
+      </p>
+    </div>
+  </div>
+
+  <!-- ============ SCHOLAR ============ -->
+  <div id="page-scholar" class="scholar-wrap" style="display:none">
+    <div class="chat page" id="chat">
+      <div class="welcome" id="welcome">
+        <div style="font-size:34px">🎓</div>
+        <h2>Scholar</h2>
+        <p>Ask about verses, authentic du'as, or basic fiqh. Scholar cites its sources, notes valid differences of opinion, and always points you to a real scholar for personal rulings.</p>
+        <div class="starters">
+          <button class="starter" onclick="sendMsg('Explain Ayat al-Kursi in depth')">Explain Ayat al-Kursi in depth</button>
+          <button class="starter" onclick="sendMsg('What du\'a should I say before sleeping?')">What du'a should I say before sleeping?</button>
+          <button class="starter" onclick="sendMsg('Help me pray Fajr on time consistently')">Help me pray Fajr on time consistently</button>
+          <button class="starter" onclick="sendMsg('What breaks wudu? Are there differences of opinion?')">What breaks wudu? Are there differences of opinion?</button>
+        </div>
+      </div>
+    </div>
+    <div class="composer-wrap">
+      <div class="composer">
+        <input id="chat-input" placeholder="Ask Scholar…" onkeydown="if(event.key==='Enter')sendMsg()">
+        <button class="btn" id="send-btn" onclick="sendMsg()">Send</button>
+      </div>
+      <div class="disclaimer">Educational tool — not a substitute for a qualified scholar. For personal rulings, consult your local imam or mufti.</div>
+    </div>
+  </div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
