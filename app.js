@@ -876,6 +876,17 @@ async function sendMsg(preset) {
   const input = $('chat-input');
   const content = (preset ?? input.value).trim();
   if (!content || busy) return;
+
+  // Client-side daily cap (10/day) — first line of defense against runaway costs
+  const today = new Date().toISOString().slice(0, 10);
+  let usage = store.get('dd-scholar-usage', { day: today, count: 0 });
+  if (usage.day !== today) usage = { day: today, count: 0 };
+  if (usage.count >= 10) {
+    const w = $('welcome'); if (w) w.remove();
+    addBubble('ai', 'You\'ve reached today\'s Scholar limit (10 questions). It resets tomorrow, insha\'Allah. The Qur\'an and Duas tabs are always open. 🌙');
+    return;
+  }
+
   input.value = '';
   const w = $('welcome'); if (w) w.remove();
   history.push({ role: 'user', content });
@@ -888,8 +899,14 @@ async function sendMsg(preset) {
       body: JSON.stringify({ messages: history })
     });
     const data = await res.json();
+    if (res.status === 429) {
+      thinking.remove(); history.pop();
+      addBubble('ai', data.message || 'Scholar is resting for now — please try again later.');
+      return;
+    }
     if (!res.ok || !data.reply) throw new Error(data.error || 'no reply');
     thinking.remove();
+    usage.count++; store.set('dd-scholar-usage', usage);
     history.push({ role: 'assistant', content: data.reply });
     addBubble('ai', data.reply);
   } catch {
