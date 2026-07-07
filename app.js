@@ -792,15 +792,20 @@ function attachCompass() {
   if (compassAttached) return;
   const handler = e => {
     let heading = null;
-    if (typeof e.webkitCompassHeading === 'number') heading = e.webkitCompassHeading;
-    else if (e.absolute && typeof e.alpha === 'number') heading = 360 - e.alpha;
-    if (heading !== null) onHeading(heading);
+    if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
+      heading = e.webkitCompassHeading; // iOS: already true-north, orientation-compensated
+    } else if (typeof e.alpha === 'number' && (e.absolute || e.type === 'deviceorientationabsolute')) {
+      // Android: compensate for screen rotation
+      const screenAngle = (screen.orientation && screen.orientation.angle) || 0;
+      heading = (360 - e.alpha + screenAngle + 360) % 360;
+    }
+    if (heading !== null) onHeadingEvent(heading);
   };
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
     DeviceOrientationEvent.requestPermission().then(state => {
       if (state === 'granted') { window.addEventListener('deviceorientation', handler); compassAttached = true; }
-      else $('qibla-info').textContent = 'Compass permission denied — the fixed direction above still works.';
-    }).catch(() => {}); // desktop / unsupported: fixed bearing still shows
+      else $('qibla-info').textContent = 'Compass permission denied. Close this tab fully and reopen the app, then allow Motion & Orientation.';
+    }).catch(() => {});
   } else {
     window.addEventListener('deviceorientationabsolute', handler);
     window.addEventListener('deviceorientation', handler);
@@ -812,19 +817,44 @@ function attachCompass() {
 function smoothTo(target) {
   if (smoothHeading === null) { smoothHeading = target; return target; }
   let diff = ((target - smoothHeading + 540) % 360) - 180;
-  smoothHeading = (smoothHeading + diff * 0.15 + 360) % 360;
+  smoothHeading = (smoothHeading + diff * 0.2 + 360) % 360;
   return smoothHeading;
 }
 
-function onHeading(rawHeading) {
-  if (qiblaBearing === null) return;
-  const heading = smoothTo(rawHeading);
+/* Live compass: events feed latestHeading; a render loop draws it; a watchdog detects sensor dropout */
+let latestHeading = null;
+let lastEventAt = 0;
+let renderLoopOn = false;
+
+function onHeadingEvent(rawHeading) {
+  latestHeading = rawHeading;
+  lastEventAt = Date.now();
+  if (!renderLoopOn) { renderLoopOn = true; requestAnimationFrame(renderCompass); }
+}
+
+function renderCompass() {
+  if (qiblaBearing === null || latestHeading === null) { requestAnimationFrame(renderCompass); return; }
+  const stale = Date.now() - lastEventAt > 2000;
+  const dir = $('qibla-dir');
+
+  if (stale) {
+    // Sensor stopped sending data — never pretend we still know the direction
+    $('compass').classList.remove('aligned');
+    dir.classList.remove('on');
+    dir.textContent = '🧭 Compass paused';
+    $('qibla-deg').textContent = 'Wave your phone in a figure-8, then turn slowly';
+    wasAligned = false;
+    requestAnimationFrame(renderCompass);
+    return;
+  }
+
+  const heading = smoothTo(latestHeading);
   const rot = (qiblaBearing - heading + 360) % 360;
   $('needle').style.transform = `translate(-50%,-100%) rotate(${rot}deg)`;
+
   let off = ((qiblaBearing - heading + 540) % 360) - 180;
   const aligned = Math.abs(off) <= 12;
   $('compass').classList.toggle('aligned', aligned);
-  const dir = $('qibla-dir');
   if (aligned) {
     dir.textContent = '🕋 This way — you\'re facing the Qibla';
     dir.classList.add('on');
@@ -833,9 +863,10 @@ function onHeading(rawHeading) {
   } else {
     dir.classList.remove('on');
     dir.textContent = off > 0 ? '↻ Turn right' : '↺ Turn left';
-    $('qibla-deg').textContent = Math.abs(Math.round(off)) + '° to go';
+    $('qibla-deg').textContent = Math.abs(Math.round(off)) + '° to go · facing ' + Math.round(heading) + '° / qibla ' + Math.round(qiblaBearing) + '°';
   }
   wasAligned = aligned;
+  requestAnimationFrame(renderCompass);
 }
 
 /* ================= SCHOLAR ================= */
