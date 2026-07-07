@@ -123,11 +123,17 @@
 
   /* Qibla */
   .qibla{text-align:center;padding:26px 18px}
-  .compass{width:220px;height:220px;border-radius:50%;border:2px solid var(--line-2);margin:18px auto;position:relative;background:radial-gradient(circle at 50% 35%, #1A2140, #10152C)}
-  .needle{position:absolute;left:50%;top:50%;width:4px;height:92px;background:var(--gold);border-radius:4px;transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(0deg);transition:transform .2s ease}
-  .needle::after{content:"🕋";position:absolute;top:-26px;left:50%;transform:translateX(-50%);font-size:20px}
+  .compass{width:230px;height:230px;border-radius:50%;border:2px solid var(--line-2);margin:18px auto;position:relative;background:radial-gradient(circle at 50% 35%, #1A2140, #10152C);transition:border-color .3s ease, box-shadow .3s ease}
+  .compass.aligned{border-color:var(--gold);box-shadow:0 0 34px rgba(185,160,92,.55);animation:qflash .9s ease 2}
+  @keyframes qflash{0%,100%{box-shadow:0 0 34px rgba(185,160,92,.55)}50%{box-shadow:0 0 60px rgba(185,160,92,.95)}}
+  .kaaba{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:44px;opacity:.35;transition:opacity .3s ease, transform .3s ease}
+  .compass.aligned .kaaba{opacity:1;transform:translate(-50%,-50%) scale(1.25)}
+  .needle{position:absolute;left:50%;top:50%;width:4px;height:96px;background:var(--gold);border-radius:4px;transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(0deg);transition:transform .12s linear}
+  .needle::after{content:"▲";position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:16px;color:var(--gold)}
   .compass .n{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--dim);font-weight:700}
-  .qdeg{font-size:26px;font-weight:700;color:var(--gold)}
+  .qdir{font-size:22px;font-weight:800;min-height:30px}
+  .qdir.on{color:var(--gold)}
+  .qdeg{font-size:14px;color:var(--muted);margin-top:2px}
 
   /* Scholar */
   .scholar-wrap{display:flex;flex-direction:column;height:100%}
@@ -312,13 +318,17 @@
   <div id="page-qibla" class="page" style="display:none">
     <div class="card qibla">
       <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.14em">Direction to the Kaaba</div>
-      <div class="compass"><span class="n">N</span><div class="needle" id="needle"></div></div>
-      <div class="qdeg" id="qibla-deg">—</div>
-      <p style="font-size:13px;color:var(--muted);margin:10px 0 16px" id="qibla-info">Tap below to find your Qibla direction.</p>
-      <button class="btn" onclick="initQibla()">📍 Find my Qibla</button>
-      <button class="btn ghost" id="compass-btn" style="display:none" onclick="enableCompass()">🧭 Enable live compass</button>
+      <div class="compass" id="compass">
+        <span class="n">N</span>
+        <div class="kaaba" id="kaaba-icon">🕋</div>
+        <div class="needle" id="needle"></div>
+      </div>
+      <div class="qdir" id="qibla-dir">—</div>
+      <div class="qdeg" id="qibla-deg"></div>
+      <p style="font-size:13px;color:var(--muted);margin:10px 0 16px" id="qibla-info">Starting…</p>
+      <button class="btn" id="qibla-retry" style="display:none" onclick="startQibla(true)">Try again</button>
       <p style="font-size:11.5px;color:var(--dim);margin-top:14px">
-        Live compass works on phones. Hold your phone flat and away from metal objects to calibrate. If the needle seems off, wave your phone in a figure-8 motion.
+        Hold your phone flat like a plate, away from metal and magnets. If the arrow drifts, wave your phone in a figure-8 to calibrate.
       </p>
     </div>
   </div>
@@ -360,6 +370,6 @@
   </div>
 </div>
 
-<script src="app.js?v=8"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

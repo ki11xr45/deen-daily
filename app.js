@@ -9,6 +9,7 @@ function showTab(t) {
     $('page-' + x).style.display = x === t ? (x === 'scholar' ? 'flex' : '') : 'none';
     $('tab-' + x).classList.toggle('active', x === t);
   });
+  if (t === 'qibla') startQibla(); // tab tap doubles as the user gesture iOS needs
 }
 
 /* ================= PRAYER TIMES ================= */
@@ -752,42 +753,89 @@ function tasbihTap() {
 function tasbihReset() { tasbihCount = 0; store.set('dd-tasbih', 0); renderTasbih(); }
 function setTasbihTarget(t) { tasbihTarget = t; store.set('dd-tasbih-target', t); renderTasbih(); }
 
-/* ================= QIBLA ================= */
+/* ================= QIBLA (auto-starts when the tab opens) ================= */
 const KAABA = { lat: 21.4225, lon: 39.8262 };
 let qiblaBearing = null;
+let smoothHeading = null;
+let wasAligned = false;
+let qiblaStarted = false;
+let compassAttached = false;
 
-function initQibla() {
-  if (!navigator.geolocation) { $('qibla-info').textContent = 'Location not supported — Qibla needs your position.'; return; }
-  $('qibla-info').textContent = 'Getting your location…';
+function startQibla(force) {
+  if (qiblaStarted && !force) return;
+  qiblaStarted = true;
+  $('qibla-retry').style.display = 'none';
+
+  // 1. Compass permission — must happen inside the tap that opened the tab (iOS rule)
+  attachCompass();
+
+  // 2. Location → bearing to the Kaaba
+  if (!navigator.geolocation) { qiblaFail('Location not supported on this device.'); return; }
+  $('qibla-info').textContent = 'Finding your direction to the Kaaba…';
   navigator.geolocation.getCurrentPosition(p => {
     const φ1 = p.coords.latitude * Math.PI / 180, φ2 = KAABA.lat * Math.PI / 180;
     const Δλ = (KAABA.lon - p.coords.longitude) * Math.PI / 180;
     let brng = Math.atan2(Math.sin(Δλ), Math.cos(φ1) * Math.tan(φ2) - Math.sin(φ1) * Math.cos(Δλ)) * 180 / Math.PI;
     qiblaBearing = (brng + 360) % 360;
-    $('qibla-deg').textContent = Math.round(qiblaBearing) + '° from North';
-    $('qibla-info').textContent = 'Face ' + Math.round(qiblaBearing) + '° clockwise from true North. Enable the live compass to see it move with your phone.';
     $('needle').style.transform = `translate(-50%,-100%) rotate(${qiblaBearing}deg)`;
-    $('compass-btn').style.display = '';
-  }, () => { $('qibla-info').textContent = 'Location was blocked. Allow location access to find the Qibla.'; });
+    $('qibla-dir').textContent = Math.round(qiblaBearing) + '° from North';
+    $('qibla-info').textContent = 'Turn slowly until the Kaaba lights up.';
+  }, () => qiblaFail('Location was blocked. Allow location access, then tap Try again.'));
 }
-function enableCompass() {
+function qiblaFail(msg) {
+  $('qibla-info').textContent = msg;
+  $('qibla-retry').style.display = '';
+  qiblaStarted = false;
+}
+
+function attachCompass() {
+  if (compassAttached) return;
   const handler = e => {
     let heading = null;
     if (typeof e.webkitCompassHeading === 'number') heading = e.webkitCompassHeading;
     else if (e.absolute && typeof e.alpha === 'number') heading = 360 - e.alpha;
-    if (heading === null || qiblaBearing === null) return;
-    const rot = (qiblaBearing - heading + 360) % 360;
-    $('needle').style.transform = `translate(-50%,-100%) rotate(${rot}deg)`;
+    if (heading !== null) onHeading(heading);
   };
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
     DeviceOrientationEvent.requestPermission().then(state => {
-      if (state === 'granted') window.addEventListener('deviceorientation', handler);
-      else $('qibla-info').textContent = 'Compass permission was denied.';
-    }).catch(() => { $('qibla-info').textContent = 'Compass not available on this device.'; });
+      if (state === 'granted') { window.addEventListener('deviceorientation', handler); compassAttached = true; }
+      else $('qibla-info').textContent = 'Compass permission denied — the fixed direction above still works.';
+    }).catch(() => {}); // desktop / unsupported: fixed bearing still shows
   } else {
     window.addEventListener('deviceorientationabsolute', handler);
     window.addEventListener('deviceorientation', handler);
+    compassAttached = true;
   }
+}
+
+/* Smooth noisy compass readings (exponential average with 360° wraparound) */
+function smoothTo(target) {
+  if (smoothHeading === null) { smoothHeading = target; return target; }
+  let diff = ((target - smoothHeading + 540) % 360) - 180;
+  smoothHeading = (smoothHeading + diff * 0.15 + 360) % 360;
+  return smoothHeading;
+}
+
+function onHeading(rawHeading) {
+  if (qiblaBearing === null) return;
+  const heading = smoothTo(rawHeading);
+  const rot = (qiblaBearing - heading + 360) % 360;
+  $('needle').style.transform = `translate(-50%,-100%) rotate(${rot}deg)`;
+  let off = ((qiblaBearing - heading + 540) % 360) - 180;
+  const aligned = Math.abs(off) <= 12;
+  $('compass').classList.toggle('aligned', aligned);
+  const dir = $('qibla-dir');
+  if (aligned) {
+    dir.textContent = '🕋 This way — you\'re facing the Qibla';
+    dir.classList.add('on');
+    $('qibla-deg').textContent = '';
+    if (!wasAligned && navigator.vibrate) navigator.vibrate([60, 40, 60]);
+  } else {
+    dir.classList.remove('on');
+    dir.textContent = off > 0 ? '↻ Turn right' : '↺ Turn left';
+    $('qibla-deg').textContent = Math.abs(Math.round(off)) + '° to go';
+  }
+  wasAligned = aligned;
 }
 
 /* ================= SCHOLAR ================= */
