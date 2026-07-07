@@ -153,9 +153,9 @@ function renderInspo() {
 }
 setInterval(renderInspo, 30 * 1000); // check every 30s; text changes on the 5-min boundary
 
-function celebrate(prayerName) {
+function celebrate(titleText) {
   const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
-  $('cel-title').textContent = prayerName + ' logged — may Allah accept it';
+  $('cel-title').textContent = titleText;
   $('cel-ar').textContent = q.ar;
   $('cel-ar').style.display = q.ar ? '' : 'none';
   $('cel-quote').textContent = '"' + q.en + '"';
@@ -190,7 +190,7 @@ function trackPrayer(p, done) {
   log[k][p] = done;
   store.set('dd-tracker', log);
   renderStats();
-  if (done) celebrate(p);
+  if (done) celebrate(p + ' logged — may Allah accept it');
 }
 
 function renderStats() {
@@ -263,7 +263,19 @@ async function loadHolidays() {
 
 /* ================= QURAN ================= */
 const QAPI = 'https://api.alquran.cloud/v1';
-const FAMOUS_RECITERS = ['ar.abdurrahmaansudais', 'ar.alafasy', 'ar.abdulbasitmurattal', 'ar.mahermuaiqly', 'ar.minshawi', 'ar.husary'];
+/* Curated reciters. type 'islamic' = cdn.islamic.network (global ayah number);
+   type 'everyayah' = everyayah.com (surah+ayah, fixed quality in path) */
+const CURATED_RECITERS = [
+  { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy', type: 'islamic' },
+  { id: 'yasser.dossary', name: 'Yasser Al-Dosari', type: 'everyayah', path: 'Yasser_Ad-Dussary_128kbps' },
+  { id: 'ar.abdurrahmaansudais', name: 'Abdur-Rahman As-Sudais', type: 'islamic' },
+  { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly', type: 'islamic' },
+  { id: 'ar.minshawi', name: 'Mohamed Siddiq El-Minshawi', type: 'islamic' },
+  { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary', type: 'islamic' },
+  { id: 'ar.saoodshuraym', name: "Sa'ud Ash-Shuraym", type: 'islamic' },
+];
+const pad3 = n => String(n).padStart(3, '0');
+function reciterDef() { return CURATED_RECITERS.find(r => r.id === reciter) || CURATED_RECITERS[0]; }
 /* Famous-verse shortcuts: name → surah (+ optional ayah to scroll to) */
 const SHORTCUTS = {
   'kursi': { surah: 2, ayah: 255 }, 'ayat al-kursi': { surah: 2, ayah: 255 }, 'ayatul kursi': { surah: 2, ayah: 255 },
@@ -297,19 +309,10 @@ async function initQuran() {
     else translation = $('sel-translation').value;
     $('sel-translation').onchange = () => { translation = $('sel-translation').value; store.set('dd-translation', translation); loadSurah(); };
 
-    // Curated top reciters only — chosen for fame + reliable audio on the CDN
-    const RECITERS7 = [
-      { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy' },
-      { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit (Murattal)' },
-      { id: 'ar.abdurrahmaansudais', name: 'Abdur-Rahman As-Sudais' },
-      { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly' },
-      { id: 'ar.minshawi', name: 'Mohamed Siddiq El-Minshawi' },
-      { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary' },
-      { id: 'ar.saoodshuraym', name: "Sa'ud Ash-Shuraym" },
-    ];
-    $('sel-reciter').innerHTML = RECITERS7.map(x => `<option value="${x.id}">🎙 ${x.name}</option>`).join('');
-    if (RECITERS7.some(x => x.id === reciter)) $('sel-reciter').value = reciter;
-    else { reciter = RECITERS7[0].id; store.set('dd-reciter', reciter); }
+    // Curated top reciters only
+    $('sel-reciter').innerHTML = CURATED_RECITERS.map(x => `<option value="${x.id}">🎙 ${x.name}</option>`).join('');
+    if (CURATED_RECITERS.some(x => x.id === reciter)) $('sel-reciter').value = reciter;
+    else { reciter = CURATED_RECITERS[0].id; store.set('dd-reciter', reciter); }
     $('sel-reciter').onchange = () => { reciter = $('sel-reciter').value; store.set('dd-reciter', reciter); delete bitrateCache[reciter]; stopAudio(); };
 
     // Juz selector
@@ -451,25 +454,29 @@ async function loadSurah() {
   }
 }
 
-/* Audio with automatic quality fallback — some reciters only exist at certain bitrates on the CDN */
+/* Audio with automatic quality fallback (islamic.network) or direct URL (everyayah) */
 const BITRATES = ['128', '64', '192', '32'];
-let bitrateCache = store.get('dd-bitrates', {}); // reciter → known working bitrate
-function audioUrl(g, br) { return `https://cdn.islamic.network/quran/audio/${br}/${reciter}/${g}.mp3`; }
+let bitrateCache = store.get('dd-bitrates', {});
+function audioSrc(item, br) {
+  const rd = reciterDef();
+  if (rd.type === 'everyayah') return `https://everyayah.com/data/${rd.path}/${pad3(item.s)}${pad3(item.a)}.mp3`;
+  return `https://cdn.islamic.network/quran/audio/${br}/${reciter}/${item.g}.mp3`;
+}
 
-function buildAudio(g, onended, onallfail) {
-  // start from the known-good bitrate for this reciter, then cascade
-  const known = bitrateCache[reciter];
-  const order = known ? [known, ...BITRATES.filter(b => b !== known)] : BITRATES.slice();
+function buildAudio(item, onended, onallfail) {
+  const rd = reciterDef();
+  const order = rd.type === 'everyayah'
+    ? ['x'] // single fixed-quality URL
+    : (bitrateCache[reciter] ? [bitrateCache[reciter], ...BITRATES.filter(b => b !== bitrateCache[reciter])] : BITRATES.slice());
   let idx = 0;
   const a = new Audio();
   a.playbackRate = playbackRate;
   const tryNext = () => {
     if (idx >= order.length) { if (onallfail) onallfail(); return; }
-    a.src = audioUrl(g, order[idx]);
+    a.src = audioSrc(item, order[idx]);
     a.load();
     a.play().then(() => {
-      bitrateCache[reciter] = order[idx];
-      store.set('dd-bitrates', bitrateCache);
+      if (rd.type !== 'everyayah') { bitrateCache[reciter] = order[idx]; store.set('dd-bitrates', bitrateCache); }
     }).catch(() => { idx++; tryNext(); });
   };
   a.onerror = () => { idx++; tryNext(); };
@@ -527,7 +534,6 @@ function stopAudio() {
 }
 
 function toggleAyah(g, surahNum, inSurah) {
-  // Same ayah already loaded → pause/resume from where it left off
   if (player.g === g && currentAudio) {
     player.paused ? resumePlayback() : pausePlayback();
     return;
@@ -537,7 +543,8 @@ function toggleAyah(g, surahNum, inSurah) {
   if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   markLastRead(inSurah);
   player = { mode: 'single', g, paused: false, items: null, index: 0 };
-  const a = buildAudio(g,
+  const item = { g, s: surahNum, a: inSurah };
+  const a = buildAudio(item,
     () => { if (el) el.classList.remove('playing'); player.g = null; setBtnLabels(); },
     () => { if (el) el.classList.remove('playing'); player.g = null; setBtnLabels(); });
   currentAudio = a;
@@ -553,7 +560,7 @@ function playSequence(items) {
   const preload = (i) => {
     if (i >= items.length || preloadEl[i]) return;
     const br = bitrateCache[reciter] || '128';
-    const a = new Audio(audioUrl(items[i].g, br));
+    const a = new Audio(audioSrc(items[i], br));
     a.preload = 'auto';
     preloadEl[i] = a;
   };
@@ -566,7 +573,7 @@ function playSequence(items) {
     const el = $('ayah-' + item.g);
     document.querySelectorAll('.ayah.playing').forEach(x => x.classList.remove('playing'));
     if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-    if (item.inSurah) markLastRead(item.inSurah);
+    if (item.a) markLastRead(item.a);
     preload(i + 1); preload(i + 2);
     const pre = preloadEl[i];
     delete preloadEl[i];
@@ -577,7 +584,7 @@ function playSequence(items) {
       pre.onerror = () => { if (el) el.classList.remove('playing'); playIndex(i + 1); };
       pre.play().catch(() => playIndex(i + 1));
     } else {
-      const a = buildAudio(item.g,
+      const a = buildAudio(item,
         () => { if (el) el.classList.remove('playing'); playIndex(i + 1); },
         () => { if (el) el.classList.remove('playing'); playIndex(i + 1); });
       currentAudio = a;
@@ -589,15 +596,14 @@ function playSequence(items) {
 }
 
 function togglePlayAll() {
-  // Already playing a sequence → pause/resume in place
   if (player.mode === 'seq' && currentAudio) {
     player.paused ? resumePlayback() : pausePlayback();
     return;
   }
   if (quranMode === 'juz' && juzData) {
-    playSequence(juzData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah })));
+    playSequence(juzData.ayahs.map(a => ({ g: a.number, s: a.surah.number, a: a.numberInSurah })));
   } else if (surahData) {
-    playSequence(surahData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah })));
+    playSequence(surahData.ayahs.map(a => ({ g: a.number, s: surahData.number, a: a.numberInSurah })));
   }
 }
 function playAll() { togglePlayAll(); }
@@ -656,17 +662,17 @@ const DUAS = [
   { cat: 'Morning', title: "Sayyid al-Istighfar — the best du'a for forgiveness", ar: "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ", translit: "Allahumma anta Rabbi la ilaha illa anta, khalaqtani wa ana 'abduka, wa ana 'ala 'ahdika wa wa'dika mastata'tu, a'udhu bika min sharri ma sana'tu, abu'u laka bini'matika 'alayya, wa abu'u bidhanbi faghfir li, fa innahu la yaghfirudh-dhunuba illa ant", en: "O Allah, You are my Lord, there is no god but You. You created me and I am Your servant, and I keep Your covenant and promise as much as I can. I seek refuge in You from the evil of what I have done. I acknowledge Your favor upon me and I acknowledge my sin, so forgive me — for none forgives sins but You.", src: "Sahih al-Bukhari", rep: "Morning & evening" },
   { cat: 'Morning', title: "Asbahna wa asbahal-mulku lillah", ar: "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ", translit: "Asbahna wa asbahal-mulku lillah, walhamdu lillah, la ilaha illallahu wahdahu la sharika lah", en: "We have entered the morning, and the dominion belongs to Allah. All praise is for Allah. There is no god but Allah alone, without partner.", src: "Sahih Muslim", rep: "Morning (evening: Amsayna…)" },
   { cat: 'Morning', title: "Protection through Allah's name", ar: "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ", translit: "Bismillahil-ladhi la yadurru ma'a ismihi shay'un fil-ardi wa la fis-sama'i wa huwas-Sami'ul-'Alim", en: "In the name of Allah, with whose name nothing on earth or in heaven can cause harm, and He is the All-Hearing, All-Knowing.", src: "Abu Dawud, At-Tirmidhi (graded sahih)", rep: "3× morning & evening" },
-  { cat: 'Evening', title: "Hasbiyallah — Allah is sufficient for me", ar: "حَسْبِيَ اللَّهُ لَا إِلَهَ إِلَّا هُوَ عَلَيْهِ تَوَكَّلْتُ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ", translit: "Hasbiyallahu la ilaha illa huwa, 'alayhi tawakkaltu wa huwa Rabbul-'arshil-'azim", en: "Allah is sufficient for me. There is no god but Him. In Him I place my trust, and He is the Lord of the Mighty Throne.", src: "Qur'an 9:129; Abu Dawud", rep: "7× morning & evening" },
-  { cat: 'Evening', title: "The three Quls", ar: "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ قُلْ أَعُوذُ بِرَبِّ النَّاسِ", translit: "Surah Al-Ikhlas, Surah Al-Falaq, Surah An-Nas", en: "Recite Surah Al-Ikhlas, Al-Falaq, and An-Nas — the Prophet ﷺ said they suffice you for everything.", src: "Abu Dawud, At-Tirmidhi", rep: "3× morning & evening" },
+  { cat: 'Evening', title: "Hasbiyallah — Allah is sufficient for me", verses: [[9,129]], ar: "حَسْبِيَ اللَّهُ لَا إِلَهَ إِلَّا هُوَ عَلَيْهِ تَوَكَّلْتُ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ", translit: "Hasbiyallahu la ilaha illa huwa, 'alayhi tawakkaltu wa huwa Rabbul-'arshil-'azim", en: "Allah is sufficient for me. There is no god but Him. In Him I place my trust, and He is the Lord of the Mighty Throne.", src: "Qur'an 9:129; Abu Dawud", rep: "7× morning & evening" },
+  { cat: 'Evening', title: "The three Quls", verses: [[112,1],[112,2],[112,3],[112,4],[113,1],[113,2],[113,3],[113,4],[113,5],[114,1],[114,2],[114,3],[114,4],[114,5],[114,6]], ar: "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ قُلْ أَعُوذُ بِرَبِّ النَّاسِ", translit: "Surah Al-Ikhlas, Surah Al-Falaq, Surah An-Nas", en: "Recite Surah Al-Ikhlas, Al-Falaq, and An-Nas — the Prophet ﷺ said they suffice you for everything.", src: "Abu Dawud, At-Tirmidhi", rep: "3× morning & evening" },
   { cat: 'Sleep', title: "Before sleeping", ar: "بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيَا", translit: "Bismika Allahumma amutu wa ahya", en: "In Your name, O Allah, I die and I live.", src: "Sahih al-Bukhari" },
   { cat: 'Sleep', title: "Waking up", ar: "الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ", translit: "Alhamdu lillahil-ladhi ahyana ba'da ma amatana wa ilayhin-nushur", en: "All praise is for Allah who gave us life after causing us to die, and to Him is the resurrection.", src: "Sahih al-Bukhari" },
   { cat: 'Eating', title: "Before eating", ar: "بِسْمِ اللَّهِ", translit: "Bismillah — and if you forget, say: Bismillahi awwalahu wa akhirahu", en: "In the name of Allah. (If you forget at the start: 'In the name of Allah at its beginning and its end.')", src: "Abu Dawud, At-Tirmidhi" },
   { cat: 'Eating', title: "After eating", ar: "الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنِي هَذَا وَرَزَقَنِيهِ مِنْ غَيْرِ حَوْلٍ مِنِّي وَلَا قُوَّةٍ", translit: "Alhamdu lillahil-ladhi at'amani hadha wa razaqanihi min ghayri hawlin minni wa la quwwah", en: "All praise is for Allah who fed me this and provided it for me, without any power or strength from myself.", src: "Abu Dawud, At-Tirmidhi" },
-  { cat: 'Travel', title: "Du'a of travel", ar: "سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ", translit: "Subhanal-ladhi sakhkhara lana hadha wa ma kunna lahu muqrinin, wa inna ila Rabbina lamunqalibun", en: "Glory to Him who has subjected this to us, for we could never have accomplished it ourselves — and surely to our Lord we will return.", src: "Qur'an 43:13-14; Sahih Muslim" },
+  { cat: 'Travel', title: "Du'a of travel", verses: [[43,13],[43,14]], ar: "سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ", translit: "Subhanal-ladhi sakhkhara lana hadha wa ma kunna lahu muqrinin, wa inna ila Rabbina lamunqalibun", en: "Glory to Him who has subjected this to us, for we could never have accomplished it ourselves — and surely to our Lord we will return.", src: "Qur'an 43:13-14; Sahih Muslim" },
   { cat: 'Prayer', title: "After salah", ar: "أَسْتَغْفِرُ اللَّهَ (ثَلَاثًا) اللَّهُمَّ أَنْتَ السَّلَامُ وَمِنْكَ السَّلَامُ تَبَارَكْتَ يَا ذَا الْجَلَالِ وَالْإِكْرَامِ", translit: "Astaghfirullah (3×). Allahumma antas-salamu wa minkas-salam, tabarakta ya Dhal-jalali wal-ikram", en: "I seek Allah's forgiveness (3×). O Allah, You are Peace and from You is peace. Blessed are You, O Possessor of Majesty and Honor.", src: "Sahih Muslim" },
   { cat: 'Prayer', title: "Tasbih after salah", ar: "سُبْحَانَ اللَّهِ (٣٣) الْحَمْدُ لِلَّهِ (٣٣) اللَّهُ أَكْبَرُ (٣٤)", translit: "SubhanAllah 33×, Alhamdulillah 33×, Allahu Akbar 34×", en: "Glory be to Allah (33×), All praise is for Allah (33×), Allah is the Greatest (34×).", src: "Sahih Muslim", rep: "After each prayer" },
   { cat: 'Protection', title: "Refuge in Allah's perfect words", ar: "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ", translit: "A'udhu bikalimatillahit-tammati min sharri ma khalaq", en: "I seek refuge in the perfect words of Allah from the evil of what He has created.", src: "Sahih Muslim", rep: "3× in the evening" },
-  { cat: 'Family', title: "For spouse and children", ar: "رَبَّنَا هَبْ لَنَا مِنْ أَزْوَاجِنَا وَذُرِّيَّاتِنَا قُرَّةَ أَعْيُنٍ وَاجْعَلْنَا لِلْمُتَّقِينَ إِمَامًا", translit: "Rabbana hab lana min azwajina wa dhurriyyatina qurrata a'yunin waj'alna lil-muttaqina imama", en: "Our Lord, grant us from our spouses and offspring comfort to our eyes, and make us leaders of the righteous.", src: "Qur'an 25:74" },
+  { cat: 'Family', title: "For spouse and children", verses: [[25,74]], ar: "رَبَّنَا هَبْ لَنَا مِنْ أَزْوَاجِنَا وَذُرِّيَّاتِنَا قُرَّةَ أَعْيُنٍ وَاجْعَلْنَا لِلْمُتَّقِينَ إِمَامًا", translit: "Rabbana hab lana min azwajina wa dhurriyyatina qurrata a'yunin waj'alna lil-muttaqina imama", en: "Our Lord, grant us from our spouses and offspring comfort to our eyes, and make us leaders of the righteous.", src: "Qur'an 25:74" },
   { cat: 'Ramadan', title: "Laylat al-Qadr du'a", ar: "اللَّهُمَّ إِنَّكَ عَفُوٌّ تُحِبُّ الْعَفْوَ فَاعْفُ عَنِّي", translit: "Allahumma innaka 'afuwwun tuhibbul-'afwa fa'fu 'anni", en: "O Allah, You are Pardoning and You love to pardon, so pardon me.", src: "At-Tirmidhi, Ibn Majah (graded sahih)" },
   { cat: 'Hajj & Umrah', title: "The Talbiyah", ar: "لَبَّيْكَ اللَّهُمَّ لَبَّيْكَ، لَبَّيْكَ لَا شَرِيكَ لَكَ لَبَّيْكَ، إِنَّ الْحَمْدَ وَالنِّعْمَةَ لَكَ وَالْمُلْكَ، لَا شَرِيكَ لَكَ", translit: "Labbayk Allahumma labbayk, labbayka la sharika laka labbayk, innal-hamda wan-ni'mata laka wal-mulk, la sharika lak", en: "Here I am, O Allah, here I am. Here I am, You have no partner, here I am. Truly all praise, favor, and sovereignty are Yours. You have no partner.", src: "Sahih al-Bukhari, Sahih Muslim" },
 ];
@@ -689,7 +695,7 @@ function renderDuas() {
     return `<div class="card dua">
       <div class="d-title"><span>${d.title}</span>
         <span style="display:flex;gap:4px;align-items:center">
-          <button class="abtn" onclick="readDua(${i})" aria-label="Listen" title="Device voice — not a recorded reciter">🔊</button>
+          ${d.verses ? `<button class="abtn" onclick="readDua(${i})" aria-label="Listen" title="Recitation by Alafasy">🔊</button>` : ''}
           <button class="fav ${on ? 'on' : ''}" onclick="toggleFavDua(${i})" aria-label="Favorite">★</button>
         </span></div>
       <div class="arabic">${d.ar}</div>
@@ -701,23 +707,25 @@ function renderDuas() {
   }).join('') : '<div class="loading">No favorites yet — tap the ★ on any du\'a.</div>';
 }
 
-/* Du'a reader — uses the device's built-in Arabic voice (synthetic, not a recorded qari) */
-let speaking = false;
+/* Du'a audio — real recitation (Alafasy via EveryAyah) for duas that are Qur'anic verses */
+let duaAudio = null;
 function readDua(i) {
-  if (!('speechSynthesis' in window)) { alert('Voice playback is not supported on this device.'); return; }
-  if (speaking) { speechSynthesis.cancel(); speaking = false; return; }
+  if (duaAudio) { duaAudio.pause(); duaAudio = null; return; }
   const d = DUAS[i];
-  speechSynthesis.cancel();
-  const voices = speechSynthesis.getVoices();
-  const arVoice = voices.find(v => v.lang && v.lang.startsWith('ar'));
-  const u = new SpeechSynthesisUtterance(arVoice ? d.ar : d.en);
-  if (arVoice) u.voice = arVoice;
-  u.lang = arVoice ? arVoice.lang : 'en-US';
-  u.rate = 0.85;
-  u.onend = () => { speaking = false; };
-  speaking = true;
-  speechSynthesis.speak(u);
+  if (!d.verses) return;
+  const seq = d.verses.slice();
+  const playNext = () => {
+    const v = seq.shift();
+    if (!v) { duaAudio = null; return; }
+    const a = new Audio(`https://everyayah.com/data/Alafasy_128kbps/${pad3(v[0])}${pad3(v[1])}.mp3`);
+    duaAudio = a;
+    a.onended = playNext;
+    a.onerror = playNext;
+    a.play().catch(playNext);
+  };
+  playNext();
 }
+
 function toggleFavDua(i) {
   let favs = store.get('dd-favduas', []);
   favs = favs.includes(i) ? favs.filter(x => x !== i) : [...favs, i];
@@ -734,7 +742,10 @@ function renderTasbih() {
 }
 function tasbihTap() {
   tasbihCount++;
-  if (tasbihCount === tasbihTarget && navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  if (tasbihCount % 33 === 0) {
+    if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+    celebrate(tasbihCount + ' dhikr completed — masha\'Allah, keep going');
+  }
   store.set('dd-tasbih', tasbihCount);
   renderTasbih();
 }
