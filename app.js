@@ -416,7 +416,7 @@ async function loadSurah() {
         <div class="surah-meta">Surah ${ar.number} · ${ar.englishName} · ${ar.numberOfAyahs} ayahs · ${ar.revelationType}</div>
       </div>`;
     if (ar.number !== 1 && ar.number !== 9) html += `<div class="bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>`;
-    html += `<button class="btn playall" onclick="playAll()">▶ Play full surah</button>`;
+    html += `<button class="btn playall" id="btn-playall" onclick="togglePlayAll()">▶ Play full surah</button>`;
     html += ar.ayahs.map((a, i) => {
       const isBm = bms.some(b => b.surah === ar.number && b.ayah === a.numberInSurah);
       return `<div class="ayah" id="ayah-${a.number}">
@@ -424,7 +424,7 @@ async function loadSurah() {
           <span class="ayah-num">${ar.number}:${a.numberInSurah}</span>
           <span class="ayah-actions">
             <button class="abtn ${isBm ? 'bookmarked' : ''}" onclick="toggleBookmark(${ar.number},${a.numberInSurah},'${ar.englishName}')">★</button>
-            <button class="abtn" onclick="playAyah(${a.number},${ar.number},${a.numberInSurah})">▶ Play</button>
+            <button class="abtn" id="pb-${a.number}" onclick="toggleAyah(${a.number},${ar.number},${a.numberInSurah})">▶ Play</button>
           </span>
         </div>
         <div class="arabic">${a.text}</div>
@@ -480,30 +480,71 @@ function speedChanged() {
   store.set('dd-speed', playbackRate);
   if (currentAudio) currentAudio.playbackRate = playbackRate;
 }
+/* ---- Player state: supports pause/resume for single ayahs and full sequences ---- */
+let player = { mode: null, g: null, paused: false, items: null, index: 0 };
+
+function markLastRead(inSurah) {
+  if (!surahData || quranMode !== 'surah') return;
+  store.set('dd-lastread', { surah: surahData.number, surahName: surahData.englishName, ayah: inSurah });
+}
+
+function setBtnLabels() {
+  // Big play-all button
+  const big = $('btn-playall');
+  if (big) {
+    if (player.mode === 'seq') big.textContent = player.paused ? '▶ Resume' : '⏸ Pause';
+    else big.textContent = quranMode === 'juz' ? '▶ Play full juz' : '▶ Play full surah';
+  }
+  // Per-ayah buttons
+  document.querySelectorAll('[id^="pb-"]').forEach(b => { b.textContent = '▶ Play'; });
+  if (player.g !== null) {
+    const b = $('pb-' + player.g);
+    if (b) b.textContent = player.paused ? '▶ Resume' : '⏸ Pause';
+  }
+}
+
+function pausePlayback() {
+  if (currentAudio && !player.paused) { currentAudio.pause(); player.paused = true; setBtnLabels(); }
+}
+function resumePlayback() {
+  if (currentAudio && player.paused) {
+    currentAudio.playbackRate = playbackRate;
+    currentAudio.play().catch(() => {});
+    player.paused = false;
+    setBtnLabels();
+  }
+}
 function stopAudio() {
   if (currentAudio) { currentAudio.pause(); currentAudio.onended = null; currentAudio.onerror = null; currentAudio = null; }
   playAllQueue = [];
+  player = { mode: null, g: null, paused: false, items: null, index: 0 };
   document.querySelectorAll('.ayah.playing').forEach(el => el.classList.remove('playing'));
+  setBtnLabels();
 }
-function markLastRead(inSurah) {
-  if (!surahData) return;
-  store.set('dd-lastread', { surah: surahData.number, surahName: surahData.englishName, ayah: inSurah });
-}
-function playAyah(g, surahNum, inSurah) {
+
+function toggleAyah(g, surahNum, inSurah) {
+  // Same ayah already loaded → pause/resume from where it left off
+  if (player.g === g && currentAudio) {
+    player.paused ? resumePlayback() : pausePlayback();
+    return;
+  }
   stopAudio();
   const el = $('ayah-' + g);
   if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   markLastRead(inSurah);
+  player = { mode: 'single', g, paused: false, items: null, index: 0 };
   const a = buildAudio(g,
-    () => { if (el) el.classList.remove('playing'); },
-    () => { if (el) el.classList.remove('playing'); });
+    () => { if (el) el.classList.remove('playing'); player.g = null; setBtnLabels(); },
+    () => { if (el) el.classList.remove('playing'); player.g = null; setBtnLabels(); });
   currentAudio = a;
   a.startPlay();
+  setBtnLabels();
 }
+
 function playSequence(items) {
   stopAudio();
   playAllQueue = items;
-  // Preload next files at the known-good bitrate so transitions are gapless
+  player = { mode: 'seq', g: null, paused: false, items, index: 0 };
   const preloadEl = {};
   const preload = (i) => {
     if (i >= items.length || preloadEl[i]) return;
@@ -514,14 +555,15 @@ function playSequence(items) {
   };
   preload(0); preload(1); preload(2);
   const playIndex = (i) => {
-    if (i >= items.length || playAllQueue !== items) return;
+    if (i >= items.length || playAllQueue !== items) { if (playAllQueue === items) stopAudio(); return; }
+    player.index = i;
     const item = items[i];
+    player.g = item.g;
     const el = $('ayah-' + item.g);
     document.querySelectorAll('.ayah.playing').forEach(x => x.classList.remove('playing'));
     if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     if (item.inSurah) markLastRead(item.inSurah);
     preload(i + 1); preload(i + 2);
-    // Use preloaded element if it loaded fine; otherwise fall back to the cascading builder
     const pre = preloadEl[i];
     delete preloadEl[i];
     if (pre && pre.readyState >= 2) {
@@ -537,16 +579,25 @@ function playSequence(items) {
       currentAudio = a;
       a.startPlay();
     }
+    setBtnLabels();
   };
   playIndex(0);
 }
-function playAll() {
+
+function togglePlayAll() {
+  // Already playing a sequence → pause/resume in place
+  if (player.mode === 'seq' && currentAudio) {
+    player.paused ? resumePlayback() : pausePlayback();
+    return;
+  }
   if (quranMode === 'juz' && juzData) {
     playSequence(juzData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah })));
   } else if (surahData) {
     playSequence(surahData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah })));
   }
 }
+function playAll() { togglePlayAll(); }
+function playAyah(g, s, n) { toggleAyah(g, s, n); }
 
 /* ---- JUZ MODE ---- */
 let juzData = null;
@@ -568,7 +619,7 @@ async function loadJuz() {
         <div class="surah-arabic">الجزء ${currentJuz}</div>
         <div class="surah-meta">Juz ${currentJuz} · ${ar.ayahs.length} ayahs</div>
       </div>
-      <button class="btn playall" onclick="playAll()">▶ Play full juz</button>`;
+      <button class="btn playall" id="btn-playall" onclick="togglePlayAll()">▶ Play full juz</button>`;
     let lastSurah = null;
     html += ar.ayahs.map((a, i) => {
       let sep = '';
@@ -582,7 +633,7 @@ async function loadJuz() {
           <span class="ayah-num">${a.surah.number}:${a.numberInSurah}</span>
           <span class="ayah-actions">
             <button class="abtn ${isBm ? 'bookmarked' : ''}" onclick="toggleBookmark(${a.surah.number},${a.numberInSurah},'${a.surah.englishName}')">★</button>
-            <button class="abtn" onclick="playAyah(${a.number},${a.surah.number},${a.numberInSurah})">▶ Play</button>
+            <button class="abtn" id="pb-${a.number}" onclick="toggleAyah(${a.number},${a.surah.number},${a.numberInSurah})">▶ Play</button>
           </span>
         </div>
         <div class="arabic">${a.text}</div>
