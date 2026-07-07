@@ -129,6 +129,60 @@ function startCountdown(next) {
   countdownTimer = setInterval(tick, 1000);
 }
 
+/* ================= INSPIRATION & CELEBRATION ================= */
+const QUOTES = [
+  { ar: "فَإِنَّ مَعَ الْعُسْرِ يُسْرًا", en: "Indeed, with hardship comes ease.", src: "Qur'an 94:6" },
+  { ar: "فَاذْكُرُونِي أَذْكُرْكُمْ", en: "So remember Me; I will remember you.", src: "Qur'an 2:152" },
+  { ar: "لَا يُكَلِّفُ اللَّهُ نَفْسًا إِلَّا وُسْعَهَا", en: "Allah does not burden a soul beyond what it can bear.", src: "Qur'an 2:286" },
+  { ar: "ادْعُونِي أَسْتَجِبْ لَكُمْ", en: "Call upon Me; I will respond to you.", src: "Qur'an 40:60" },
+  { ar: "إِنَّ الصَّلَاةَ تَنْهَى عَنِ الْفَحْشَاءِ وَالْمُنكَرِ", en: "Indeed, prayer restrains from immorality and wrongdoing.", src: "Qur'an 29:45" },
+  { ar: "", en: "The most beloved deeds to Allah are those done most consistently, even if they are small.", src: "Sahih al-Bukhari, Sahih Muslim" },
+  { ar: "", en: "Whoever prays the dawn prayer is under the protection of Allah.", src: "Sahih Muslim" },
+  { ar: "", en: "The strong believer is better and more beloved to Allah than the weak believer, while there is good in both.", src: "Sahih Muslim" },
+  { ar: "", en: "Supplication is itself worship.", src: "Abu Dawud, At-Tirmidhi" },
+  { ar: "وَقُل رَّبِّ زِدْنِي عِلْمًا", en: "And say: My Lord, increase me in knowledge.", src: "Qur'an 20:114" },
+];
+
+function renderInspo() {
+  // rotate deterministically every 5 minutes
+  const idx = Math.floor(Date.now() / (5 * 60 * 1000)) % QUOTES.length;
+  const q = QUOTES[idx];
+  if (!$('inspo-text')) return;
+  $('inspo-text').textContent = '"' + q.en + '"';
+  $('inspo-src').textContent = '— ' + q.src;
+}
+setInterval(renderInspo, 30 * 1000); // check every 30s; text changes on the 5-min boundary
+
+function celebrate(prayerName) {
+  const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+  $('cel-title').textContent = prayerName + ' logged — may Allah accept it';
+  $('cel-ar').textContent = q.ar;
+  $('cel-ar').style.display = q.ar ? '' : 'none';
+  $('cel-quote').textContent = '"' + q.en + '"';
+  $('cel-src').textContent = '— ' + q.src;
+  $('celebrate-overlay').style.display = 'flex';
+  // confetti burst
+  const colors = ['#B9A05C', '#5CB98A', '#E7E9F4', '#9CC4E8', '#F5A524'];
+  for (let i = 0; i < 45; i++) {
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw';
+    c.style.background = colors[Math.floor(Math.random() * colors.length)];
+    c.style.animationDuration = (1.6 + Math.random() * 1.6) + 's';
+    c.style.animationDelay = (Math.random() * 0.4) + 's';
+    c.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 3600);
+  }
+}
+function closeCelebrate(e) {
+  // close when clicking the dark background or the button (no event passed)
+  if (e && e.target !== $('celebrate-overlay')) return;
+  $('celebrate-overlay').style.display = 'none';
+}
+// button version without event check
+function closeCelebrateBtn() { $('celebrate-overlay').style.display = 'none'; }
+
 function trackPrayer(p, done) {
   const log = store.get('dd-tracker', {});
   const k = todayKey();
@@ -136,6 +190,7 @@ function trackPrayer(p, done) {
   log[k][p] = done;
   store.set('dd-tracker', log);
   renderStats();
+  if (done) celebrate(p);
 }
 
 function renderStats() {
@@ -339,6 +394,12 @@ async function loadSurah() {
 }
 
 function audioUrl(g) { return `https://cdn.islamic.network/quran/audio/128/${reciter}/${g}.mp3`; }
+let playbackRate = store.get('dd-speed', 1);
+function speedChanged() {
+  playbackRate = parseFloat($('sel-speed').value);
+  store.set('dd-speed', playbackRate);
+  if (currentAudio) currentAudio.playbackRate = playbackRate;
+}
 function stopAudio() {
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   playAllQueue = [];
@@ -353,6 +414,7 @@ function playAyah(g, surahNum, inSurah) {
   if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   markLastRead(inSurah);
   const a = new Audio(audioUrl(g));
+  a.playbackRate = playbackRate;
   currentAudio = a;
   a.onended = () => { if (el) el.classList.remove('playing'); };
   a.onerror = () => { if (el) el.classList.remove('playing'); };
@@ -361,21 +423,38 @@ function playAyah(g, surahNum, inSurah) {
 function playAll() {
   if (!surahData) return;
   stopAudio();
-  playAllQueue = surahData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah }));
-  const next = () => {
-    const item = playAllQueue.shift();
-    if (!item) return;
+  const items = surahData.ayahs.map(a => ({ g: a.number, inSurah: a.numberInSurah }));
+  playAllQueue = items;
+
+  // Preload pool: audio for each ayah is created ahead of time so transitions are gapless
+  const preloaded = {};
+  const preload = (i) => {
+    if (i >= items.length || preloaded[i]) return;
+    const a = new Audio(audioUrl(items[i].g));
+    a.preload = 'auto';
+    a.playbackRate = playbackRate;
+    preloaded[i] = a;
+  };
+  preload(0); preload(1); preload(2); // warm up the first few immediately
+
+  const playIndex = (i) => {
+    if (i >= items.length || playAllQueue !== items) return; // stopped or finished
+    const item = items[i];
     const el = $('ayah-' + item.g);
     document.querySelectorAll('.ayah.playing').forEach(x => x.classList.remove('playing'));
     if (el) { el.classList.add('playing'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     markLastRead(item.inSurah);
-    const a = new Audio(audioUrl(item.g));
+    const a = preloaded[i] || new Audio(audioUrl(item.g));
+    a.playbackRate = playbackRate;
     currentAudio = a;
-    a.onended = () => { if (el) el.classList.remove('playing'); next(); };
-    a.onerror = () => { if (el) el.classList.remove('playing'); next(); };
-    a.play().catch(() => next());
+    // preload the next two while this one plays
+    preload(i + 1); preload(i + 2);
+    delete preloaded[i];
+    a.onended = () => { if (el) el.classList.remove('playing'); playIndex(i + 1); };
+    a.onerror = () => { if (el) el.classList.remove('playing'); playIndex(i + 1); };
+    a.play().catch(() => playIndex(i + 1));
   };
-  next();
+  playIndex(0);
 }
 
 /* ================= DUAS ================= */
@@ -536,6 +615,8 @@ function addBubble(kind, text, pulse) {
     loadPrayer();
   }
   renderStats();
+  renderInspo();
+  if ($('sel-speed')) $('sel-speed').value = String(playbackRate);
   loadHolidays();
   initQuran();
   initDuas();

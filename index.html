@@ -142,7 +142,44 @@
   .disclaimer{max-width:760px;margin:10px auto 0;text-align:center;font-size:11.5px;color:var(--dim)}
   .pulse{animation:pulse 1.4s ease-in-out infinite;color:var(--gold)}
   @keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
-  @media(prefers-reduced-motion:reduce){.pulse{animation:none}.needle{transition:none}}
+
+  /* Inspiration card */
+  .inspo{
+    background:linear-gradient(135deg,#1A2140,#151C38);border:1px solid var(--gold);border-radius:14px;
+    padding:16px 18px;margin-bottom:16px;cursor:pointer;transition:transform .15s ease;
+  }
+  .inspo:hover{transform:translateY(-2px)}
+  .inspo-label{font-size:10.5px;color:var(--gold);text-transform:uppercase;letter-spacing:.14em;margin-bottom:8px}
+  .inspo-text{font-size:15px;line-height:1.6;font-weight:500}
+  .inspo-src{font-size:12px;color:var(--dim);margin-top:6px}
+
+  /* Celebration */
+  .cel-overlay{
+    position:fixed;inset:0;background:rgba(11,15,20,.75);backdrop-filter:blur(4px);
+    display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;
+  }
+  .cel-box{
+    background:var(--panel);border:1px solid var(--gold);border-radius:18px;
+    padding:30px 26px;max-width:420px;width:100%;text-align:center;
+    animation:celPop .3s ease;
+  }
+  @keyframes celPop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+  .cel-check{
+    width:54px;height:54px;border-radius:50%;background:var(--green);color:var(--bg);
+    font-size:28px;font-weight:800;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;
+  }
+  .cel-title{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.14em;margin-bottom:14px}
+  .cel-quote-ar{font-family:'Amiri',serif;font-size:22px;line-height:1.8;color:var(--gold);direction:rtl;margin-bottom:10px}
+  .cel-quote{font-size:15.5px;line-height:1.6;margin-bottom:8px}
+  .cel-src{font-size:12px;color:var(--dim);margin-bottom:18px}
+  .confetti{
+    position:fixed;top:-12px;width:9px;height:14px;z-index:101;pointer-events:none;
+    animation:confFall linear forwards;
+  }
+  @keyframes confFall{
+    to{transform:translateY(105vh) rotate(720deg);opacity:.9}
+  }
+  @media(prefers-reduced-motion:reduce){.pulse{animation:none}.needle{transition:none}.confetti{display:none}.cel-box{animation:none}}
 </style>
 </head>
 <body>
@@ -164,6 +201,12 @@
   <!-- ============ PRAYER ============ -->
   <div id="page-prayer" class="page">
     <div class="hijri" id="hijri-box"></div>
+
+    <div class="inspo" id="inspo-card" onclick="showTab('duas')">
+      <div class="inspo-label">✨ Daily inspiration — tap for more duas</div>
+      <div class="inspo-text" id="inspo-text"></div>
+      <div class="inspo-src" id="inspo-src"></div>
+    </div>
 
     <div class="card">
       <div class="locrow">
@@ -215,6 +258,15 @@
     <div class="qtoggles">
       <label><input type="checkbox" id="tg-translit" onchange="togglePref('translit')"> Transliteration</label>
       <label><input type="checkbox" id="tg-english" checked onchange="togglePref('english')"> Translation</label>
+      <label style="margin-left:auto">Speed
+        <select id="sel-speed" onchange="speedChanged()" style="width:auto;padding:6px 8px;font-size:13px">
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2×</option>
+        </select>
+      </label>
     </div>
     <div id="resume-box"></div>
     <div id="bookmarks-box"></div>
@@ -282,6 +334,18 @@
     </div>
   </div>
 </main>
+
+<!-- Prayer celebration modal -->
+<div id="celebrate-overlay" class="cel-overlay" style="display:none" onclick="closeCelebrate(event)">
+  <div class="cel-box">
+    <div class="cel-check">✓</div>
+    <div class="cel-title" id="cel-title">Prayer logged</div>
+    <div class="cel-quote-ar" id="cel-ar"></div>
+    <div class="cel-quote" id="cel-quote"></div>
+    <div class="cel-src" id="cel-src"></div>
+    <button class="btn" onclick="closeCelebrateBtn()">Alhamdulillah</button>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>
