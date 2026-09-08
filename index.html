@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0d1226">
 <meta name="description" content="Your daily space for prayer, Qur’an, and remembrance.">
 <title>Deen Daily</title>
@@ -197,7 +197,7 @@
   }
   @media(prefers-reduced-motion:reduce){.pulse{animation:none}.needle{transition:none}.confetti{display:none}.cel-box{animation:none}}
 </style>
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
 
@@ -251,6 +251,15 @@
     </div>
 
     </details>
+    <div class="prayer-date-nav" aria-label="Browse prayer dates">
+      <div class="prayer-date-title" id="prayer-date-label" aria-live="polite"></div>
+      <div class="prayer-date-actions">
+        <button class="btn ghost day-arrow" onclick="movePrayerDate(-1)" aria-label="Previous day">‹</button>
+        <label class="date-picker-label"><span class="sr-only">Choose prayer date</span><input type="date" id="prayer-date" onchange="selectPrayerDate(this.value)"></label>
+        <button class="btn ghost day-arrow" onclick="movePrayerDate(1)" aria-label="Next day">›</button>
+        <button class="btn ghost" id="prayer-today" onclick="goToPrayerToday()">Today</button>
+      </div>
+    </div>
     <div id="prayer-content"><div class="card prayer-empty"><span class="empty-icon">☾</span><h2>Your day, guided by prayer.</h2><p>Choose your city above to see accurate prayer times and your next prayer countdown.</p></div></div>
     <div class="section-heading"><h2>Worship tracking</h2><span>One prayer at a time</span></div>
 
@@ -386,6 +395,6 @@
   </div>
 </div>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

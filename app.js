@@ -7,6 +7,7 @@ const store = {
 const sectionLabels = { prayer: 'Your daily overview', quran: 'Read & reflect', duas: 'Duas & remembrance', qibla: 'Direction of prayer', scholar: 'Ask Scholar' };
 function showTab(t) {
   if (!sectionLabels[t]) return;
+  document.body.classList.toggle('scholar-open', t === 'scholar');
   $('section-label').textContent = sectionLabels[t];
   $('main-content').scrollTop = 0;
   ['prayer', 'quran', 'duas', 'qibla', 'scholar'].forEach(x => {
@@ -25,18 +26,54 @@ let loc = store.get('dd-loc', null);
 let method = store.get('dd-method', '2');
 let todayTimings = null;
 let countdownTimer = null;
+let prayerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+let followPrayerToday = true;
+let selectedPrayerDay = todayKey();
+let prayerView = null;
+let prayerRequest = 0;
+let prayerAbort = null;
+const prayerCache = new Map();
 
-function todayKey() {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function dateKeyInZone(date, zone = prayerZone) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const get = type => parts.find(p => p.type === type).value;
+  return `${get('year').padStart(4, '0')}-${get('month')}-${get('day')}`;
+}
+function todayKey() { return dateKeyInZone(new Date()); }
+function shiftPrayerDay(key, amount) {
+  const date = new Date(key + 'T12:00:00Z');
+  date.setUTCDate(date.getUTCDate() + amount);
+  return date.toISOString().slice(0, 10);
 }
 function dateParam(d) {
+  if (typeof d === 'string') return d.split('-').reverse().join('-');
   return String(d.getDate()).padStart(2, '0') + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + d.getFullYear();
 }
-
+function prayerDayLabel(key) {
+  return new Intl.DateTimeFormat('en', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(key + 'T12:00:00Z'));
+}
+function updatePrayerDateControls() {
+  $('prayer-date').value = selectedPrayerDay;
+  $('prayer-date-label').textContent = (selectedPrayerDay === todayKey() ? 'Today · ' : '') + prayerDayLabel(selectedPrayerDay);
+  $('prayer-today').disabled = followPrayerToday;
+}
+function selectPrayerDate(value) {
+  if (!/^\d{4,}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value + 'T12:00:00Z'))) return;
+  selectedPrayerDay = value;
+  followPrayerToday = value === todayKey();
+  updatePrayerDateControls();
+  loadPrayer();
+}
+function movePrayerDate(amount) { selectPrayerDate(shiftPrayerDay(selectedPrayerDay, amount)); }
+function goToPrayerToday() {
+  followPrayerToday = true;
+  selectedPrayerDay = todayKey();
+  updatePrayerDateControls();
+  loadPrayer();
+}
 function useMyLocation() {
   if (!navigator.geolocation) { alert('Location not supported on this device — enter your city instead.'); return; }
-  $('prayer-content').innerHTML = '<div class="loading">Getting your location…</div>';
+  $('prayer-content').innerHTML = '<div class="loading" role="status">Getting your location…</div>';
   navigator.geolocation.getCurrentPosition(
     p => { loc = { type: 'coords', lat: p.coords.latitude, lon: p.coords.longitude }; store.set('dd-loc', loc); loadPrayer(); },
     () => { $('location-settings').open = true; $('prayer-content').innerHTML = '<div class="err">Location was blocked. Enter your city manually above.</div>'; }
@@ -56,95 +93,166 @@ function useCity() {
   loadPrayer();
 }
 function methodChanged() { method = $('sel-method').value; store.set('dd-method', method); if (loc) loadPrayer(); }
-
-async function fetchTimings(dateStr) {
-  let url;
-  if (loc.type === 'coords') url = `${ALADHAN}/timings/${dateStr}?latitude=${loc.lat}&longitude=${loc.lon}&method=${method}`;
-  else url = `${ALADHAN}/timingsByCity/${dateStr}?city=${encodeURIComponent(loc.city)}&country=${encodeURIComponent(loc.country)}&method=${method}`;
-  const r = await (await fetch(url)).json();
-  if (r.code !== 200) throw new Error('bad response');
-  return r.data;
+async function fetchTimings(dateStr, location = loc, calculation = method, signal) {
+  const query = location.type === 'coords' ? `latitude=${location.lat}&longitude=${location.lon}` : `city=${encodeURIComponent(location.city)}&country=${encodeURIComponent(location.country)}`;
+  const url = `${ALADHAN}/${location.type === 'coords' ? 'timings' : 'timingsByCity'}/${dateStr}?${query}&method=${calculation}`;
+  if (prayerCache.has(url)) return prayerCache.get(url);
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener('abort', cancel, { once: true });
+  const timeout = setTimeout(cancel, 15000);
+  let result;
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error('Prayer service unavailable');
+    result = await response.json();
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new Error('Prayer service unavailable. Please retry.');
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', cancel);
+  }
+  if (result.code !== 200 || !result.data?.timings || !result.data?.meta?.timezone) throw new Error('Prayer times unavailable');
+  prayerCache.set(url, result.data);
+  if (prayerCache.size > 60) prayerCache.delete(prayerCache.keys().next().value);
+  return result.data;
 }
-
 async function loadPrayer() {
+  updatePrayerDateControls();
   if (!loc) return;
-  if (countdownTimer) clearInterval(countdownTimer);
+  const request = ++prayerRequest;
+  if (prayerAbort) prayerAbort.abort();
+  prayerAbort = new AbortController();
+  const signal = prayerAbort.signal, location = { ...loc }, calculation = method;
+  clearInterval(countdownTimer);
+  prayerView = null;
+  $('hijri-box').textContent = '';
   $('prayer-content').innerHTML = '<div class="loading" role="status">Loading prayer times…</div>';
   try {
-    const data = await fetchTimings(dateParam(new Date()));
+    if (followPrayerToday) selectedPrayerDay = todayKey();
+    let day = selectedPrayerDay;
+    let data = await fetchTimings(dateParam(day), location, calculation, signal);
+    if (request !== prayerRequest) return;
+    prayerZone = data.meta.timezone;
+    // A selected city may already be on tomorrow's date relative to this device.
+    if (followPrayerToday && day !== todayKey()) {
+      day = selectedPrayerDay = todayKey();
+      data = await fetchTimings(dateParam(day), location, calculation, signal);
+      if (request !== prayerRequest) return;
+    }
+    const [previous, following] = await Promise.allSettled([
+      fetchTimings(dateParam(shiftPrayerDay(day, -1)), location, calculation, signal),
+      fetchTimings(dateParam(shiftPrayerDay(day, 1)), location, calculation, signal)
+    ]);
+    if (request !== prayerRequest) return;
+    prayerView = { day, zone: prayerZone, data, previous: previous.status === 'fulfilled' ? previous.value : null, following: following.status === 'fulfilled' ? following.value : null };
     todayTimings = data.timings;
     renderHijri(data.date);
     renderPrayerTimes();
     renderStats();
-    $('location-label').textContent = loc.type === 'city' ? loc.city + ', ' + loc.country.toUpperCase() : 'Current location';
+    updatePrayerDateControls();
+    $('location-label').textContent = location.type === 'city' ? location.city + ', ' + location.country.toUpperCase() : 'Current location';
     $('location-settings').open = false;
     $('location-error').textContent = '';
-  } catch {
-    $('location-settings').open = true;
-    $('prayer-content').innerHTML = '<div class="err">Couldn\'t load prayer times. Check the city spelling (use a 2-letter country code like US) and try again.</div>';
+  } catch (error) {
+    if (request !== prayerRequest || error.name === 'AbortError') return;
+    $('prayer-content').innerHTML = '<div class="err" role="alert">Couldn’t load this date. Check your connection and location, or choose another date.<br><button class="btn ghost" onclick="loadPrayer()">Try again</button></div>';
   }
 }
-
 function renderHijri(dateObj) {
   const h = dateObj.hijri;
-  $('hijri-box').innerHTML = `
-    <div class="h-ar">${h.day} ${h.month.ar} ${h.year}</div>
-    <div class="h-en">${h.day} ${h.month.en} ${h.year} AH · ${dateObj.readable}</div>`;
+  $('hijri-box').innerHTML = `<div class="h-ar">${h.day} ${h.month.ar} ${h.year}</div><div class="h-en">${h.day} ${h.month.en} ${h.year} AH · ${dateObj.readable}</div>`;
 }
-
 function to12h(t) {
-  const [H, M] = t.split(':').map(Number);
-  const am = H < 12;
-  return ((H % 12) || 12) + ':' + String(M).padStart(2, '0') + (am ? ' AM' : ' PM');
+  const match = String(t).match(/(?:T|^)(\d{2}):(\d{2})/);
+  if (!match) return 'Unavailable';
+  const hour = Number(match[1]);
+  return ((hour % 12) || 12) + ':' + match[2] + (hour < 12 ? ' AM' : ' PM');
 }
-function timeToDate(t) {
-  const [H, M] = t.split(':').map(Number);
-  const d = new Date(); d.setHours(H, M, 0, 0); return d;
+// Convert the API's city-local clock time to an instant, including DST offsets.
+function prayerInstant(day, time, zone) {
+  if (!/^\d{2}:\d{2}/.test(String(time))) return null;
+  const [hour, minute] = time.slice(0, 5).split(':').map(Number);
+  if (hour > 23 || minute > 59) return null;
+  const wall = Date.parse(`${day}T${time.slice(0, 5)}:00Z`);
+  let instant = wall;
+  const format = new Intl.DateTimeFormat('en-GB', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  for (let i = 0; i < 4; i++) {
+    const parts = format.formatToParts(new Date(instant));
+    const get = type => parts.find(p => p.type === type).value;
+    const local = Date.parse(`${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}Z`);
+    const adjustment = wall - local;
+    instant += adjustment;
+    if (!adjustment) break;
+  }
+  return Number.isFinite(instant) ? new Date(instant) : null;
 }
-
+function timeToDate(t) { return prayerInstant(selectedPrayerDay, t, prayerZone); }
+function clockLabel(instant, zone = prayerZone) {
+  return new Intl.DateTimeFormat('en', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(instant);
+}
+function nightWindow(day, evening, morning, zone) {
+  if (!evening || !morning) return null;
+  const sunset = prayerInstant(day, evening.timings.Maghrib, zone);
+  const isha = prayerInstant(day, evening.timings.Isha, zone);
+  const fajr = prayerInstant(shiftPrayerDay(day, 1), morning.timings.Fajr, zone);
+  if (!sunset || !isha || !fajr || fajr <= sunset || fajr <= isha) return null;
+  return { isha, fajr, start: new Date(Math.ceil((+sunset + (fajr - sunset) * 2 / 3) / 60000) * 60000) };
+}
+function prayerPhase(view, now = new Date()) {
+  const live = view.day === dateKeyInZone(now, view.zone);
+  if (!live) return { kind: 'schedule' };
+  const fajr = prayerInstant(view.day, view.data.timings.Fajr, view.zone);
+  const isha = prayerInstant(view.day, view.data.timings.Isha, view.zone);
+  const afterIsha = isha && now >= isha;
+  const beforeFajr = fajr && now < fajr;
+  if (afterIsha || beforeFajr) {
+    const night = afterIsha ? nightWindow(view.day, view.data, view.following, view.zone) : nightWindow(shiftPrayerDay(view.day, -1), view.previous, view.data, view.zone);
+    if (night && now >= night.isha && now < night.fajr) {
+      return { kind: now < night.start ? 'qiyam-upcoming' : 'qiyam-active', target: now < night.start ? night.start : night.fajr, night };
+    }
+    if (afterIsha) return { kind: 'night-unavailable' };
+  }
+  const next = TRACKED.find(name => { const time = prayerInstant(view.day, view.data.timings[name], view.zone); return time && time > now; });
+  return next ? { kind: 'prayer', next, target: prayerInstant(view.day, view.data.timings[next], view.zone) } : { kind: 'night-unavailable' };
+}
 function renderPrayerTimes() {
-  const log = store.get('dd-tracker', {});
-  const today = log[todayKey()] || {};
+  if (!prayerView) return;
+  clearInterval(countdownTimer);
+  const view = prayerView, live = view.day === todayKey();
+  const phase = prayerPhase(view);
+  const log = store.get('dd-tracker', {})[view.day] || {};
+  const qiyam = phase.kind.startsWith('qiyam');
+  let hero;
+  if (phase.kind === 'schedule') {
+    hero = `<div class="card schedule-heading"><span class="eyebrow">PRAYER SCHEDULE</span><h2>${prayerDayLabel(view.day)}</h2><p>Times in ${view.zone.replaceAll('_', ' ')} · <button class="text-button" onclick="goToPrayerToday()">Back to today</button></p></div>`;
+  } else if (phase.kind === 'night-unavailable') {
+    hero = '<div class="card next-prayer"><div class="np-label">After Isha</div><div class="np-name">Qiyam al-Layl</div><p class="np-time">The last-third time is unavailable for this night.</p><button class="btn ghost" onclick="loadPrayer()">Retry night times</button></div>';
+  } else {
+    hero = `<div class="card next-prayer"><span class="np-tag">${qiyam ? 'Night prayer' : 'Coming up'}</span><div class="np-label">${qiyam ? (phase.kind === 'qiyam-active' ? 'Last third of the night · now' : 'Last third of the night begins in') : 'Next prayer'}</div><div class="np-name">${qiyam ? 'Qiyam al-Layl' : phase.next}</div><div class="np-count" id="np-countdown">--:--:--</div><div class="np-time">${qiyam ? (phase.kind === 'qiyam-active' ? 'Time remaining until Fajr' : 'Starts at ' + clockLabel(phase.night.start)) + ' · Fajr at ' + clockLabel(phase.night.fajr) : 'at ' + clockLabel(phase.target)}</div></div>`;
+  }
   const shown = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
-  let next = null;
-  const now = new Date();
-  for (const p of TRACKED) { if (timeToDate(todayTimings[p]) > now) { next = p; break; } }
-
-  let html = `<div class="card next-prayer"><span class="np-tag">${next ? 'Coming up' : 'Tomorrow'}</span>
-      <div class="np-label">Next prayer</div>
-      <div class="np-name">${next || 'Fajr tomorrow'}</div>
-      <div class="np-count" id="np-countdown">--:--:--</div>
-      ${next ? `<div class="np-time">at ${to12h(todayTimings[next])}</div>` : ''}
-    </div><div class="card prayer-list"><div class="prayer-list-title"><span>Today’s prayers</span><small>Check off as you pray</small></div>`;
-  html += shown.map(p => {
-    const trackable = TRACKED.includes(p);
-    return `<div class="ptime ${p === next ? 'now' : ''}">
-      <span class="pt-name"><span class="pt-symbol" aria-hidden="true">${({Fajr:'☾',Sunrise:'☼',Dhuhr:'☀',Asr:'◷',Maghrib:'◒',Isha:'☾'})[p]}</span>${p}${p === next ? '<small class="now-badge">NEXT</small>' : ''}</span>
-      <span style="display:flex;align-items:center">
-        <span class="pt-time">${to12h(todayTimings[p])}</span>
-        ${trackable ? `<input type="checkbox" ${today[p] ? 'checked' : ''} onchange="trackPrayer('${p}', this.checked)" aria-label="Mark ${p} as prayed">` : '<span class="prayer-check-space" aria-hidden="true"></span>'}
-      </span>
-    </div>`;
-  }).join('');
-  html += '</div>';
-  $('prayer-content').innerHTML = html;
-  startCountdown(next);
+  const rows = shown.map(p => `<div class="ptime ${p === phase.next ? 'now' : ''}"><span class="pt-name"><span class="pt-symbol" aria-hidden="true">${({Fajr:'☾',Sunrise:'☼',Dhuhr:'☀',Asr:'◷',Maghrib:'◒',Isha:'☾'})[p]}</span>${p}${p === phase.next ? '<small class="now-badge">NEXT</small>' : ''}</span><span style="display:flex;align-items:center"><span class="pt-time">${to12h(view.data.timings[p])}</span>${live && TRACKED.includes(p) ? `<input type="checkbox" ${log[p] ? 'checked' : ''} onchange="trackPrayer('${p}', this.checked)" aria-label="Mark ${p} as prayed">` : '<span class="prayer-check-space" aria-hidden="true"></span>'}</span></div>`).join('');
+  const night = qiyam ? phase.night : nightWindow(view.day, view.data, view.following, view.zone);
+  const nightText = night ? `<strong>${clockLabel(night.start, view.zone)} – ${clockLabel(night.fajr, view.zone)}</strong><span>${prayerDayLabel(dateKeyInZone(night.start, view.zone))}${dateKeyInZone(night.start, view.zone) !== dateKeyInZone(night.fajr, view.zone) ? ' → ' + prayerDayLabel(dateKeyInZone(night.fajr, view.zone)) : ''}</span>` : '<span>Night times unavailable. <button class="text-button" onclick="loadPrayer()">Try again</button></span>';
+  $('prayer-content').innerHTML = hero + `<div class="card prayer-list"><div class="prayer-list-title"><span>${live ? 'Today’s prayers' : 'Prayer times'}</span><small>${live ? 'Check off as you pray' : 'Viewing another day'}</small></div>${rows}</div><div class="card qiyam-details"><div><h2>Qiyam · last third of the night</h2>${nightText}</div><p>Night prayer can be offered after Isha until Fajr. This window highlights the last third, calculated from Maghrib to the following Fajr. <a href="https://islamqa.org/hanafi/qibla-hanafi/43841/" target="_blank" rel="noopener noreferrer">About this time ↗</a></p></div>`;
+  startCountdown(phase);
 }
-
-function startCountdown(next) {
-  if (countdownTimer) clearInterval(countdownTimer);
-  const el = () => $('np-countdown');
-  const target = next ? timeToDate(todayTimings[next]) : null;
+function startCountdown(phase) {
+  clearInterval(countdownTimer);
   const tick = () => {
-    if (!el()) return;
-    if (!target) { el().textContent = '🌙'; return; }
-    let diff = Math.floor((target - new Date()) / 1000);
-    if (diff <= 0) { loadPrayer(); return; }
-    const h = Math.floor(diff / 3600), m = Math.floor((diff % 3600) / 60), s = diff % 60;
-    el().textContent = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    if (!prayerView) return;
+    if (followPrayerToday && selectedPrayerDay !== todayKey()) { goToPrayerToday(); return; }
+    const current = prayerPhase(prayerView);
+    if (current.kind !== phase.kind || current.next !== phase.next) { renderPrayerTimes(); return; }
+    if (!phase.target || !$('np-countdown')) return;
+    const diff = Math.max(0, Math.ceil((phase.target - new Date()) / 1000));
+    $('np-countdown').textContent = [Math.floor(diff / 3600), Math.floor(diff % 3600 / 60), diff % 60].map(n => String(n).padStart(2, '0')).join(':');
   };
-  tick();
   countdownTimer = setInterval(tick, 1000);
+  tick();
 }
 
 /* ================= INSPIRATION & CELEBRATION ================= */
@@ -213,6 +321,7 @@ document.addEventListener('keydown', event => {
 });
 
 function trackPrayer(p, done) {
+  if (selectedPrayerDay !== todayKey()) return;
   const log = store.get('dd-tracker', {});
   const k = todayKey();
   log[k] = log[k] || {};
@@ -230,11 +339,9 @@ function renderStats() {
 
   // streak: consecutive past days (ending yesterday or today-if-complete) with all 5
   let streak = 0;
-  const d = new Date();
   if (doneToday === 5) streak++;
   for (let i = 1; i < 400; i++) {
-    const dd = new Date(); dd.setDate(d.getDate() - i);
-    const kk = dd.getFullYear() + '-' + String(dd.getMonth() + 1).padStart(2, '0') + '-' + String(dd.getDate()).padStart(2, '0');
+    const kk = shiftPrayerDay(k, -i);
     const day = log[kk];
     if (day && TRACKED.every(p => day[p])) streak++;
     else break;
@@ -960,8 +1067,35 @@ function addBubble(kind, text, pulse) {
   return row;
 }
 
+/* Keep the app inside the visible phone viewport when Safari opens its keyboard. */
+function syncPhoneViewport() {
+  const viewport = window.visualViewport;
+  const mobile = window.matchMedia('(max-width: 640px)').matches;
+  const root = document.documentElement;
+  if (!mobile || (viewport && Math.abs(viewport.scale - 1) > 0.05)) {
+    if (!mobile) {
+      root.style.removeProperty('--app-height');
+      root.style.removeProperty('--viewport-top');
+      document.body.classList.remove('keyboard-open');
+    }
+    return;
+  }
+  root.style.setProperty('--app-height', (viewport ? viewport.height : window.innerHeight) + 'px');
+  root.style.setProperty('--viewport-top', (viewport ? viewport.offsetTop : 0) + 'px');
+  const editing = document.activeElement?.matches('input, textarea, [contenteditable="true"]');
+  const keyboard = Boolean(editing && viewport && window.innerHeight - viewport.height > 120);
+  document.body.classList.toggle('keyboard-open', keyboard);
+}
+window.addEventListener('resize', syncPhoneViewport);
+window.visualViewport?.addEventListener('resize', syncPhoneViewport);
+window.visualViewport?.addEventListener('scroll', syncPhoneViewport);
+document.addEventListener('focusin', syncPhoneViewport);
+document.addEventListener('focusout', () => requestAnimationFrame(syncPhoneViewport));
+
 /* ================= BOOT ================= */
 (function boot() {
+  syncPhoneViewport();
+  updatePrayerDateControls();
   $('today-date').textContent = new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date());
   ['loc-city', 'loc-country'].forEach(id => $(id).addEventListener('keydown', event => { if (event.key === 'Enter') useCity(); }));
   $('sel-method').value = method;
