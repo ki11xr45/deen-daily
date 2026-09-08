@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d1226">
+<meta name="description" content="Your daily space for prayer, Qur’an, and remembrance.">
 <title>Deen Daily</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -195,42 +197,45 @@
   }
   @media(prefers-reduced-motion:reduce){.pulse{animation:none}.needle{transition:none}.confetti{display:none}.cel-box{animation:none}}
 </style>
+<link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
 
+<a class="skip-link" href="#main-content">Skip to content</a>
 <header>
   <div class="head-inner">
-    <div class="brand"><span>☾</span> Deen Daily</div>
-    <nav class="tabs">
-      <button class="tab active" id="tab-prayer" onclick="showTab('prayer')">🕌 Prayer</button>
-      <button class="tab" id="tab-quran" onclick="showTab('quran')">📖 Qur'an</button>
-      <button class="tab" id="tab-duas" onclick="showTab('duas')">🤲 Duas</button>
-      <button class="tab" id="tab-qibla" onclick="showTab('qibla')">🧭 Qibla</button>
-      <button class="tab" id="tab-scholar" onclick="showTab('scholar')">🎓 Scholar</button>
+    <a class="brand" href="#prayer" onclick="showTab('prayer');return false"><span class="brand-mark">☾</span><span>Deen Daily<small>A moment for your faith</small></span></a>
+    <div class="nav-label">YOUR DAILY PRACTICE</div>
+    <nav class="tabs" aria-label="Main navigation">
+      <button class="tab active" id="tab-prayer" onclick="showTab('prayer')" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a7 7 0 1 0 9 9A9 9 0 0 1 12 3Z"/><path d="M18 3v4m-2-2h4"/></svg><span>Prayer</span></button>
+      <button class="tab" id="tab-quran" onclick="showTab('quran')" ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v15M3 4c4-1 6 0 9 2 3-2 5-3 9-2v15c-4-1-6 0-9 2-3-2-5-3-9-2Z"/></svg><span>Qur’an</span></button>
+      <button class="tab" id="tab-duas" onclick="showTab('duas')" ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v6m8-6v6M5 7v6a7 7 0 0 0 14 0V7M8 12l4 4 4-4M12 16v5"/></svg><span>Duas</span></button>
+      <button class="tab" id="tab-qibla" onclick="showTab('qibla')" ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m16 8-2 6-6 2 2-6Z"/></svg><span>Qibla</span></button>
+      <button class="tab" id="tab-scholar" onclick="showTab('scholar')" ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-8 8H4l1.5-4A8 8 0 1 1 20 11.5Z"/><path d="M8 10h8m-8 4h5"/></svg><span>Scholar</span></button>
     </nav>
+    <div class="sidebar-footer"><span>بِسْمِ اللَّهِ</span><p>One day. One prayer at a time.</p></div>
   </div>
 </header>
 
-<main>
+<main id="main-content" tabindex="-1">
+  <div class="topbar"><span id="section-label">Your daily overview</span><span id="today-date"></span></div>
   <!-- ============ PRAYER ============ -->
   <div id="page-prayer" class="page">
-    <div class="hijri" id="hijri-box"></div>
+    <div class="page-heading"><div><p class="eyebrow">BISMILLAH</p><h1>Make time for what matters.</h1><p>Your prayers, your progress, a little inspiration.</p></div><div class="hijri" id="hijri-box"></div></div>
+    <div class="dashboard-grid">
+    <section class="prayer-column" aria-label="Today's prayers">
+    <details class="location-settings" id="location-settings" open>
+      <summary><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m16 8-2 6-6 2 2-6Z"/></svg><span id="location-label">Set your prayer location</span></span><span class="settings-action">Edit <span class="chevron">⌄</span></span></summary>
+    <div class="location-body"><p id="location-error" class="field-error" role="alert"></p>
 
-    <div class="inspo" id="inspo-card" onclick="showTab('duas')">
-      <div class="inspo-label">✨ Daily inspiration — tap for more duas</div>
-      <div class="inspo-text" id="inspo-text"></div>
-      <div class="inspo-src" id="inspo-src"></div>
-    </div>
-
-    <div class="card">
       <div class="locrow">
-        <div style="flex:0 0 auto"><button class="btn ghost" onclick="useMyLocation()">📍 Use my location</button></div>
-        <div><label class="ctl">City</label><input type="text" id="loc-city" placeholder="e.g. Fullerton"></div>
-        <div><label class="ctl">Country</label><input type="text" id="loc-country" placeholder="e.g. US"></div>
-        <div style="flex:0 0 auto"><button class="btn" onclick="useCity()">Go</button></div>
+        <div style="flex:0 0 auto"><button class="btn ghost" onclick="useMyLocation()">Use my location</button></div>
+        <div><label class="ctl" for="loc-city">City</label><input type="text" id="loc-city" placeholder="e.g. Fullerton"></div>
+        <div><label class="ctl" for="loc-country">Country</label><input type="text" id="loc-country" placeholder="e.g. US"></div>
+        <div style="flex:0 0 auto"><button class="btn" onclick="useCity()">Save location</button></div>
       </div>
       <div style="margin-top:12px">
-        <label class="ctl">Calculation method</label>
+        <label class="ctl" for="sel-method">Calculation method</label>
         <select id="sel-method" onchange="methodChanged()">
           <option value="2">ISNA — North America</option>
           <option value="3">Muslim World League</option>
@@ -245,34 +250,45 @@
       </div>
     </div>
 
-    <div id="prayer-content"><div class="loading">Set your location to see prayer times.</div></div>
+    </details>
+    <div id="prayer-content"><div class="card prayer-empty"><span class="empty-icon">☾</span><h2>Your day, guided by prayer.</h2><p>Choose your city above to see accurate prayer times and your next prayer countdown.</p></div></div>
+    <div class="section-heading"><h2>Worship tracking</h2><span>One prayer at a time</span></div>
 
-    <h2 class="sec">Worship tracking</h2>
+
     <div class="stats" id="stats-box"></div>
 
-    <h2 class="sec">Islamic calendar — upcoming dates</h2>
+    </section>
+    <aside class="reflection-column">
+    <button class="inspo" id="inspo-card" onclick="showTab('duas')">
+      <span class="inspo-label">A MOMENT OF REFLECTION</span><span class="quote-mark" aria-hidden="true">“</span>
+      <span class="inspo-text" id="inspo-text"></span><span class="inspo-src" id="inspo-src"></span>
+      <span class="inspo-link">Explore duas <span aria-hidden="true">↗</span></span>
+    </button>
+    <div class="section-heading"><h2>Coming up</h2><span>Islamic calendar</span></div>
     <div class="card" id="holidays-box"><div class="loading">Loading…</div></div>
     <p style="font-size:11.5px;color:var(--dim);text-align:center;margin-top:8px">
       Dates are calculated estimates — actual observance follows local moonsighting.
     </p>
+    </aside>
+    </div>
   </div>
 
   <!-- ============ QURAN ============ -->
-  <div id="page-quran" class="page" style="display:none">
+  <div id="page-quran" class="page" style="display:none"><div class="page-heading"><div><p class="eyebrow">YOUR DAILY PRACTICE</p><h1>The Holy Qur’an</h1><p>Read, listen, and reflect. At your own pace.</p></div></div>
     <div class="qmode">
       <button class="qm active" id="qm-surah" onclick="setQuranMode('surah')">Surah</button>
       <button class="qm" id="qm-juz" onclick="setQuranMode('juz')">Juz</button>
     </div>
     <div class="qsearchrow">
-      <input type="text" id="q-search" placeholder="Search: surah name, number, or 'kursi', 'yaseen'…" oninput="filterSurahs()">
-      <input type="number" id="q-ayah-jump" placeholder="Ayah #" min="1" style="max-width:90px">
+      <input type="text" id="q-search" aria-label="Search surahs" placeholder="Search: surah name, number, or 'kursi', 'yaseen'…" oninput="filterSurahs()">
+      <input type="number" id="q-ayah-jump" aria-label="Ayah number" placeholder="Ayah #" min="1" style="max-width:90px">
       <button class="btn ghost" onclick="jumpToAyah()">Go</button>
     </div>
     <div class="qcontrols">
-      <div id="wrap-surah"><label class="ctl">Surah</label><select id="sel-surah"></select></div>
-      <div id="wrap-juz" style="display:none"><label class="ctl">Juz</label><select id="sel-juz"></select></div>
-      <div><label class="ctl">Reciter</label><select id="sel-reciter"></select></div>
-      <div style="grid-column:1/-1"><label class="ctl">Translation</label><select id="sel-translation"></select></div>
+      <div id="wrap-surah"><label class="ctl" for="sel-surah">Surah</label><select id="sel-surah"></select></div>
+      <div id="wrap-juz" style="display:none"><label class="ctl" for="sel-juz">Juz</label><select id="sel-juz"></select></div>
+      <div><label class="ctl" for="sel-reciter">Reciter</label><select id="sel-reciter"></select></div>
+      <div style="grid-column:1/-1"><label class="ctl" for="sel-translation">Translation</label><select id="sel-translation"></select></div>
     </div>
     <div class="qtoggles">
       <label><input type="checkbox" id="tg-translit" onchange="togglePref('translit')"> Transliteration</label>
@@ -293,17 +309,17 @@
   </div>
 
   <!-- ============ DUAS ============ -->
-  <div id="page-duas" class="page" style="display:none">
+  <div id="page-duas" class="page" style="display:none"><div class="page-heading"><div><p class="eyebrow">YOUR DAILY PRACTICE</p><h1>Duas & remembrance</h1><p>Small moments of remembrance throughout your day.</p></div></div>
     <div class="card tasbih">
       <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.14em">Digital Tasbih</div>
-      <div class="tap" id="tasbih-tap" onclick="tasbihTap()">
+      <button class="tap" id="tasbih-tap" onclick="tasbihTap()" aria-label="Add one remembrance">
         <b id="tasbih-count">0</b>
-        <span id="tasbih-target-label">of 33</span>
-      </div>
+        <span id="tasbih-target-label">of 33</span><span class="tap-hint">Tap to count</span>
+      </button>
       <div class="tasbih-row">
-        <button class="btn ghost" onclick="setTasbihTarget(33)">33</button>
-        <button class="btn ghost" onclick="setTasbihTarget(99)">99</button>
-        <button class="btn ghost" onclick="setTasbihTarget(100)">100</button>
+        <button class="btn ghost" data-target="33" onclick="setTasbihTarget(33)">33</button>
+        <button class="btn ghost" data-target="99" onclick="setTasbihTarget(99)">99</button>
+        <button class="btn ghost" data-target="100" onclick="setTasbihTarget(100)">100</button>
         <button class="btn ghost" onclick="tasbihReset()">Reset</button>
       </div>
     </div>
@@ -315,7 +331,7 @@
   </div>
 
   <!-- ============ QIBLA ============ -->
-  <div id="page-qibla" class="page" style="display:none">
+  <div id="page-qibla" class="page" style="display:none"><div class="page-heading"><div><p class="eyebrow">YOUR DAILY PRACTICE</p><h1>Find your Qibla</h1><p>Find your direction. Prepare for prayer.</p></div></div>
     <div class="card qibla">
       <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.14em">Direction to the Kaaba</div>
       <div class="compass" id="compass">
@@ -337,8 +353,8 @@
   <div id="page-scholar" class="scholar-wrap" style="display:none">
     <div class="chat page" id="chat">
       <div class="welcome" id="welcome">
-        <div style="font-size:34px">🎓</div>
-        <h2>Scholar</h2>
+        <div class="scholar-symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-8 8H4l1.5-4A8 8 0 1 1 20 11.5Z"/><path d="M8 10h8m-8 4h5"/></svg></div>
+        <p class="eyebrow">LEARN WITH CURIOSITY</p><h1>What’s on your mind?</h1>
         <p>Ask about verses, authentic du'as, or basic fiqh. Scholar cites its sources, notes valid differences of opinion, and always points you to a real scholar for personal rulings.</p>
         <div class="starters">
           <button class="starter" onclick="sendMsg('Explain Ayat al-Kursi in depth')">Explain Ayat al-Kursi in depth</button>
@@ -350,7 +366,7 @@
     </div>
     <div class="composer-wrap">
       <div class="composer">
-        <input id="chat-input" placeholder="Ask Scholar…" onkeydown="if(event.key==='Enter')sendMsg()">
+        <input aria-label="Your question for Scholar" id="chat-input" placeholder="Ask Scholar…" onkeydown="if(event.key==='Enter')sendMsg()">
         <button class="btn" id="send-btn" onclick="sendMsg()">Send</button>
       </div>
       <div class="disclaimer">Educational tool — not a substitute for a qualified scholar. For personal rulings, consult your local imam or mufti.</div>
@@ -359,7 +375,7 @@
 </main>
 
 <!-- Prayer celebration modal -->
-<div id="celebrate-overlay" class="cel-overlay" style="display:none" onclick="closeCelebrate(event)">
+<div id="celebrate-overlay" class="cel-overlay" role="dialog" aria-modal="true" aria-labelledby="cel-title" style="display:none" onclick="closeCelebrate(event)">
   <div class="cel-box">
     <div class="cel-check">✓</div>
     <div class="cel-title" id="cel-title">Prayer logged</div>
@@ -370,6 +386,6 @@
   </div>
 </div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
