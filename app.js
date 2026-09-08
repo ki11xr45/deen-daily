@@ -4,10 +4,16 @@ const store = {
   get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
 };
+const sectionLabels = { prayer: 'Your daily overview', quran: 'Read & reflect', duas: 'Duas & remembrance', qibla: 'Direction of prayer', scholar: 'Ask Scholar' };
 function showTab(t) {
+  if (!sectionLabels[t]) return;
+  $('section-label').textContent = sectionLabels[t];
+  $('main-content').scrollTop = 0;
   ['prayer', 'quran', 'duas', 'qibla', 'scholar'].forEach(x => {
     $('page-' + x).style.display = x === t ? (x === 'scholar' ? 'flex' : '') : 'none';
     $('tab-' + x).classList.toggle('active', x === t);
+    if (x === t) $('tab-' + x).setAttribute('aria-current', 'page');
+    else $('tab-' + x).removeAttribute('aria-current');
   });
   if (t === 'qibla') startQibla(); // tab tap doubles as the user gesture iOS needs
 }
@@ -33,12 +39,18 @@ function useMyLocation() {
   $('prayer-content').innerHTML = '<div class="loading">Getting your location…</div>';
   navigator.geolocation.getCurrentPosition(
     p => { loc = { type: 'coords', lat: p.coords.latitude, lon: p.coords.longitude }; store.set('dd-loc', loc); loadPrayer(); },
-    () => { $('prayer-content').innerHTML = '<div class="err">Location was blocked. Enter your city manually above.</div>'; }
+    () => { $('location-settings').open = true; $('prayer-content').innerHTML = '<div class="err">Location was blocked. Enter your city manually above.</div>'; }
   );
 }
 function useCity() {
   const city = $('loc-city').value.trim(), country = $('loc-country').value.trim();
-  if (!city || !country) { alert('Enter both city and country.'); return; }
+  if (!city || !country) {
+    $('location-error').textContent = 'Enter your city and country to continue.';
+    $('location-settings').open = true;
+    $(city ? 'loc-country' : 'loc-city').focus();
+    return;
+  }
+  $('location-error').textContent = '';
   loc = { type: 'city', city, country };
   store.set('dd-loc', loc);
   loadPrayer();
@@ -56,14 +68,19 @@ async function fetchTimings(dateStr) {
 
 async function loadPrayer() {
   if (!loc) return;
-  $('prayer-content').innerHTML = '<div class="loading">Loading prayer times…</div>';
+  if (countdownTimer) clearInterval(countdownTimer);
+  $('prayer-content').innerHTML = '<div class="loading" role="status">Loading prayer times…</div>';
   try {
     const data = await fetchTimings(dateParam(new Date()));
     todayTimings = data.timings;
     renderHijri(data.date);
     renderPrayerTimes();
     renderStats();
+    $('location-label').textContent = loc.type === 'city' ? loc.city + ', ' + loc.country.toUpperCase() : 'Current location';
+    $('location-settings').open = false;
+    $('location-error').textContent = '';
   } catch {
+    $('location-settings').open = true;
     $('prayer-content').innerHTML = '<div class="err">Couldn\'t load prayer times. Check the city spelling (use a 2-letter country code like US) and try again.</div>';
   }
 }
@@ -93,19 +110,19 @@ function renderPrayerTimes() {
   const now = new Date();
   for (const p of TRACKED) { if (timeToDate(todayTimings[p]) > now) { next = p; break; } }
 
-  let html = `<div class="card next-prayer">
-      <div class="np-label">${next ? 'Next prayer' : 'All prayers done for today'}</div>
+  let html = `<div class="card next-prayer"><span class="np-tag">${next ? 'Coming up' : 'Tomorrow'}</span>
+      <div class="np-label">Next prayer</div>
       <div class="np-name">${next || 'Fajr tomorrow'}</div>
       <div class="np-count" id="np-countdown">--:--:--</div>
       ${next ? `<div class="np-time">at ${to12h(todayTimings[next])}</div>` : ''}
-    </div><div class="card">`;
+    </div><div class="card prayer-list"><div class="prayer-list-title"><span>Today’s prayers</span><small>Check off as you pray</small></div>`;
   html += shown.map(p => {
     const trackable = TRACKED.includes(p);
     return `<div class="ptime ${p === next ? 'now' : ''}">
-      <span class="pt-name">${p}</span>
+      <span class="pt-name"><span class="pt-symbol" aria-hidden="true">${({Fajr:'☾',Sunrise:'☼',Dhuhr:'☀',Asr:'◷',Maghrib:'◒',Isha:'☾'})[p]}</span>${p}${p === next ? '<small class="now-badge">NEXT</small>' : ''}</span>
       <span style="display:flex;align-items:center">
         <span class="pt-time">${to12h(todayTimings[p])}</span>
-        ${trackable ? `<input type="checkbox" ${today[p] ? 'checked' : ''} onchange="trackPrayer('${p}', this.checked)" aria-label="Mark ${p} as prayed">` : ''}
+        ${trackable ? `<input type="checkbox" ${today[p] ? 'checked' : ''} onchange="trackPrayer('${p}', this.checked)" aria-label="Mark ${p} as prayed">` : '<span class="prayer-check-space" aria-hidden="true"></span>'}
       </span>
     </div>`;
   }).join('');
@@ -149,12 +166,14 @@ function renderInspo() {
   const idx = Math.floor(Date.now() / (5 * 60 * 1000)) % QUOTES.length;
   const q = QUOTES[idx];
   if (!$('inspo-text')) return;
-  $('inspo-text').textContent = '"' + q.en + '"';
+  $('inspo-text').textContent = q.en;
   $('inspo-src').textContent = '— ' + q.src;
 }
 setInterval(renderInspo, 30 * 1000); // check every 30s; text changes on the 5-min boundary
 
+let celebrationFocus = null;
 function celebrate(titleText) {
+  celebrationFocus = document.activeElement;
   const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
   $('cel-title').textContent = titleText;
   $('cel-ar').textContent = q.ar;
@@ -162,6 +181,7 @@ function celebrate(titleText) {
   $('cel-quote').textContent = '"' + q.en + '"';
   $('cel-src').textContent = '— ' + q.src;
   $('celebrate-overlay').style.display = 'flex';
+  $('celebrate-overlay').querySelector('button').focus();
   // confetti burst
   const colors = ['#B9A05C', '#5CB98A', '#E7E9F4', '#9CC4E8', '#F5A524'];
   for (let i = 0; i < 45; i++) {
@@ -179,10 +199,18 @@ function celebrate(titleText) {
 function closeCelebrate(e) {
   // close when clicking the dark background or the button (no event passed)
   if (e && e.target !== $('celebrate-overlay')) return;
-  $('celebrate-overlay').style.display = 'none';
+  closeCelebrateBtn();
 }
 // button version without event check
-function closeCelebrateBtn() { $('celebrate-overlay').style.display = 'none'; }
+function closeCelebrateBtn() {
+  $('celebrate-overlay').style.display = 'none';
+  if (celebrationFocus && celebrationFocus.isConnected) celebrationFocus.focus();
+}
+document.addEventListener('keydown', event => {
+  if ($('celebrate-overlay').style.display === 'none') return;
+  if (event.key === 'Escape') closeCelebrateBtn();
+  if (event.key === 'Tab') { event.preventDefault(); $('celebrate-overlay').querySelector('button').focus(); }
+});
 
 function trackPrayer(p, done) {
   const log = store.get('dd-tracker', {});
@@ -697,7 +725,7 @@ function renderDuas() {
       <div class="d-title"><span>${d.title}</span>
         <span style="display:flex;gap:4px;align-items:center">
           ${d.verses ? `<button class="abtn" onclick="readDua(${i})" aria-label="Listen" title="Recitation by Alafasy">🔊</button>` : ''}
-          <button class="fav ${on ? 'on' : ''}" onclick="toggleFavDua(${i})" aria-label="Favorite">★</button>
+          <button class="fav ${on ? 'on' : ''}" onclick="toggleFavDua(${i})" aria-label="${on ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${on}">★</button>
         </span></div>
       <div class="arabic">${d.ar}</div>
       <div class="translit">${d.translit}</div>
@@ -740,10 +768,13 @@ let tasbihTarget = store.get('dd-tasbih-target', 33);
 function renderTasbih() {
   $('tasbih-count').textContent = tasbihCount;
   $('tasbih-target-label').textContent = 'of ' + tasbihTarget;
+  document.querySelectorAll('[data-target]').forEach(button => {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.target) === tasbihTarget));
+  });
 }
 function tasbihTap() {
   tasbihCount++;
-  if (tasbihCount % 33 === 0) {
+  if (tasbihCount % tasbihTarget === 0) {
     if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
     celebrate(tasbihCount + ' dhikr completed — masha\'Allah, keep going');
   }
@@ -931,6 +962,8 @@ function addBubble(kind, text, pulse) {
 
 /* ================= BOOT ================= */
 (function boot() {
+  $('today-date').textContent = new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date());
+  ['loc-city', 'loc-country'].forEach(id => $(id).addEventListener('keydown', event => { if (event.key === 'Enter') useCity(); }));
   $('sel-method').value = method;
   if (loc) {
     if (loc.type === 'city') { $('loc-city').value = loc.city; $('loc-country').value = loc.country; }
