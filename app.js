@@ -54,6 +54,7 @@ function prayerDayLabel(key) {
 }
 function updatePrayerDateControls() {
   $('prayer-date').value = selectedPrayerDay;
+  $('prayer-date-value').textContent = new Intl.DateTimeFormat('en', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(selectedPrayerDay + 'T12:00:00Z'));
   $('prayer-date-label').textContent = (selectedPrayerDay === todayKey() ? 'Today · ' : '') + prayerDayLabel(selectedPrayerDay);
   $('prayer-today').disabled = followPrayerToday;
 }
